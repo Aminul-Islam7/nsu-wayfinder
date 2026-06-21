@@ -12,6 +12,9 @@ import { computeShortestPath } from '../../lib/routing'
 interface MapCanvasProps {
   isDark: boolean
   pickingFromMap?: boolean
+  heading?: number | null      // compass heading 0-360, 0=north CW
+  gpsActive?: boolean          // whether GPS is live
+  trackingEnabled?: boolean    // whether sensor tracking is on
 }
 
 // Custom Stairs SVG Icon
@@ -48,7 +51,12 @@ const INITIAL_VIEW_STATE = {
 const MAP_STYLE_LIGHT = 'https://basemaps.cartocdn.com/gl/positron-gl-style/style.json'
 const MAP_STYLE_DARK = 'https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json'
 
-export const MapCanvas: React.FC<MapCanvasProps> = ({ isDark: isDarkMode, pickingFromMap = false }) => {
+export const MapCanvas: React.FC<MapCanvasProps> = ({
+  isDark: isDarkMode,
+  pickingFromMap = false,
+  heading = null,
+  gpsActive = false,
+}) => {
   const {
     activeLevel,
     setActiveLevel,
@@ -513,32 +521,100 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({ isDark: isDarkMode, pickin
 
         {/* Visitor Origin Marker (You) */}
         {(route.rawOrigin || route.origin) && (
-          <Marker 
-            longitude={route.rawOrigin ? route.rawOrigin[0] : route.origin![0]} 
-            latitude={route.rawOrigin ? route.rawOrigin[1] : route.origin![1]} 
+          <Marker
+            longitude={route.rawOrigin ? route.rawOrigin[0] : route.origin![0]}
+            latitude={route.rawOrigin ? route.rawOrigin[1] : route.origin![1]}
             anchor="center"
             style={{ zIndex: 9999 }}
           >
-            <div 
+            <div
               style={{ opacity: route.originLevel !== activeLevel ? 0.6 : 1 }}
               className="flex flex-col items-center select-none pointer-events-none animate-in fade-in zoom-in duration-300 relative z-[9999]"
             >
-              <div 
+              {/* YOU label */}
+              <div
                 style={{
                   color: '#2563eb',
-                  textShadow: isDarkMode 
+                  textShadow: isDarkMode
                     ? '-1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000, 1px 1px 0 #000'
-                    : '-1px -1px 0 #fff, 1px -1px 0 #fff, -1px 1px 0 #fff, 1px 1px 0 #fff'
+                    : '-1px -1px 0 #fff, 1px -1px 0 #fff, -1px 1px 0 #fff, 1px 1px 0 #fff',
                 }}
                 className="mb-1 text-[10px] font-black tracking-wider uppercase whitespace-nowrap"
               >
                 You {route.originLevel !== activeLevel && `(L${route.originLevel})`}
               </div>
-              <div className="w-4.5 h-4.5 rounded-full bg-blue-600 border-[2.5px] border-white flex items-center justify-center shadow-lg relative">
-                {route.originLevel === activeLevel && (
-                  <span className="absolute w-full h-full rounded-full bg-blue-500/50 animate-ping" />
+
+              {/* Dot + compass cone */}
+              <div style={{ position: 'relative', width: 42, height: 42, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+
+                {/* Compass heading cone — only when heading known */}
+                {heading != null && route.originLevel === activeLevel && (
+                  <div
+                    style={{
+                      position: 'absolute',
+                      width: 0,
+                      height: 0,
+                      borderLeft: '8px solid transparent',
+                      borderRight: '8px solid transparent',
+                      borderBottom: '22px solid rgba(37,99,235,0.55)',
+                      bottom: '50%',
+                      left: '50%',
+                      transformOrigin: 'bottom center',
+                      transform: `translateX(-50%) rotate(${heading}deg)`,
+                      transition: 'transform 0.25s cubic-bezier(0.34,1.26,0.64,1)',
+                      zIndex: 1,
+                    }}
+                  />
                 )}
-                <div className="w-1.5 h-1.5 rounded-full bg-white" />
+
+                {/* Accuracy ring (GPS active = solid, dead reckoning = dashed) */}
+                {route.originLevel === activeLevel && (
+                  <div
+                    style={{
+                      position: 'absolute',
+                      width: 36,
+                      height: 36,
+                      borderRadius: '50%',
+                      border: gpsActive
+                        ? '1.5px solid rgba(37,99,235,0.35)'
+                        : '1.5px dashed rgba(37,99,235,0.30)',
+                      background: 'rgba(37,99,235,0.08)',
+                    }}
+                  />
+                )}
+
+                {/* Ping ring */}
+                {route.originLevel === activeLevel && (
+                  <span
+                    style={{
+                      position: 'absolute',
+                      width: 18,
+                      height: 18,
+                      borderRadius: '50%',
+                      background: 'rgba(59,130,246,0.45)',
+                      animation: 'ping 1.6s cubic-bezier(0,0,0.2,1) infinite',
+                    }}
+                  />
+                )}
+
+                {/* Core blue dot */}
+                <div
+                  style={{
+                    width: 16,
+                    height: 16,
+                    borderRadius: '50%',
+                    background: '#2563eb',
+                    border: '2.5px solid #fff',
+                    boxShadow: '0 2px 8px rgba(37,99,235,0.55)',
+                    position: 'relative',
+                    zIndex: 2,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                  }}
+                >
+                  <div style={{ width: 5, height: 5, borderRadius: '50%', background: '#fff' }} />
+                </div>
               </div>
             </div>
           </Marker>

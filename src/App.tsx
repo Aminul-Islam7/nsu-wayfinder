@@ -2,11 +2,15 @@ import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { MapCanvas } from './components/map/MapCanvas'
 import { useStore } from './store/useStore'
 import type { Level } from './store/useStore'
+import { useDeviceOrientation } from './hooks/useDeviceOrientation'
+import { useDeadReckoning } from './hooks/useDeadReckoning'
+import { useGeolocation } from './hooks/useGeolocation'
 import {
   Search, X, MapPin, GraduationCap, Navigation,
   Sun, Moon, ArrowUpDown, Layers, Clock, Route,
-  ChevronRight, AlertTriangle, Footprints
+  ChevronRight, AlertTriangle, Footprints, Radio
 } from 'lucide-react'
+import { nearestPointOnLine, point } from '@turf/turf'
 
 const StairsIcon = ({ size = 14 }: { size?: number }) => (
   <svg width={size} height={size} viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5"
@@ -49,8 +53,6 @@ function glassStyle(dark: boolean, extra?: React.CSSProperties): React.CSSProper
   }
 }
 
-
-
 // ─── Small reusable icon-box ──────────────────────────────────────
 function IconBox({ bg, glow, children }: { bg: string; glow: string; children: React.ReactNode }) {
   return (
@@ -65,7 +67,16 @@ function IconBox({ bg, glow, children }: { bg: string; glow: string; children: R
   )
 }
 
-
+// ─── Responsive hook ──────────────────────────────────────────────
+function useIsMobile() {
+  const [mobile, setMobile] = useState(() => window.innerWidth < 520)
+  useEffect(() => {
+    const fn = () => setMobile(window.innerWidth < 520)
+    window.addEventListener('resize', fn)
+    return () => window.removeEventListener('resize', fn)
+  }, [])
+  return mobile
+}
 
 // ═══════════════════════════════════════════════════════════════════
 export default function App() {
@@ -74,7 +85,11 @@ export default function App() {
     features, isLoading,
     route, setDestination, setOrigin, setRawOrigin, clearRoute,
     isAdminMode,
+    trackingEnabled, setTrackingEnabled,
+    gpsActive, setGpsActive,
   } = useStore()
+
+  const isMobile = useIsMobile()
 
   // ── Theme ────────────────────────────────────────────────────────
   const [isDark, setIsDark] = useState(() =>
@@ -100,6 +115,90 @@ export default function App() {
   const [pickMode,    setPickMode]    = useState(false)
 
   const panelRef = useRef<HTMLDivElement>(null)
+
+  // ── Compass / orientation ─────────────────────────────────────────
+  const { heading, hasCompass, permissionGranted: compassGranted, requestPermission: reqCompass } = useDeviceOrientation()
+
+  // ── GPS tracking ─────────────────────────────────────────────────
+  // Last GPS fix accuracy — prefer GPS when accuracy < 30m, else dead reckon
+  const gpsAccRef = useRef<number>(Infinity)
+
+  const handleGpsPosition = useCallback((lng: number, lat: number, accuracy: number) => {
+    gpsAccRef.current = accuracy
+    const isGoodFix = accuracy < 50
+    setGpsActive(isGoodFix)
+
+    if (isGoodFix) {
+      // Snap to nearest path and update origin
+      setRawOrigin([lng, lat])
+      const originLvl = (route.originLevel ?? activeLevel) as Level
+      const levelPaths = features.filter(
+        f => f.geometry && f.properties?.type === 'path' && f.properties?.level === originLvl
+      )
+      if (levelPaths.length > 0) {
+        try {
+          const pt = point([lng, lat])
+          let minDist = Infinity
+          let snapped: [number, number] | null = null
+          for (const pf of levelPaths) {
+            const s = nearestPointOnLine(pf, pt)
+            const d = s.properties?.dist ?? Infinity
+            if (d < minDist) { minDist = d; snapped = s.geometry.coordinates as [number, number] }
+          }
+          if (snapped) setOrigin(snapped, originLvl)
+        } catch { /* ignore snap error */ }
+      } else {
+        setOrigin([lng, lat], originLvl)
+      }
+    }
+  }, [features, activeLevel, route.originLevel, setGpsActive, setRawOrigin, setOrigin])
+
+  useGeolocation({ enabled: trackingEnabled, onPosition: handleGpsPosition })
+
+  // ── Dead reckoning (kicks in when GPS unavailable / indoors) ─────
+  const currentPos = route.rawOrigin ?? route.origin ?? null
+
+  const handleDrPosition = useCallback((lng: number, lat: number) => {
+    // Only use dead reckoning when GPS is poor
+    if (gpsAccRef.current < 50) return
+    setGpsActive(false)
+    setRawOrigin([lng, lat])
+    const originLvl = (route.originLevel ?? activeLevel) as Level
+    const levelPaths = features.filter(
+      f => f.geometry && f.properties?.type === 'path' && f.properties?.level === originLvl
+    )
+    if (levelPaths.length > 0) {
+      try {
+        const pt = point([lng, lat])
+        let minDist = Infinity
+        let snapped: [number, number] | null = null
+        for (const pf of levelPaths) {
+          const s = nearestPointOnLine(pf, pt)
+          const d = s.properties?.dist ?? Infinity
+          if (d < minDist) { minDist = d; snapped = s.geometry.coordinates as [number, number] }
+        }
+        if (snapped) setOrigin(snapped, originLvl)
+      } catch { /* ignore */ }
+    } else {
+      setOrigin([lng, lat], originLvl)
+    }
+  }, [gpsAccRef, features, activeLevel, route.originLevel, setGpsActive, setRawOrigin, setOrigin])
+
+  useDeadReckoning({
+    enabled: trackingEnabled && !gpsActive,
+    heading,
+    onPositionUpdate: handleDrPosition,
+    initialPosition: currentPos,
+  })
+
+  // ── Auto-request iOS orientation permission on first interaction ─
+  useEffect(() => {
+    if (!compassGranted) {
+      const fn = () => { reqCompass(); document.removeEventListener('touchstart', fn) }
+      document.addEventListener('touchstart', fn, { once: true })
+      return () => document.removeEventListener('touchstart', fn)
+    }
+  }, [compassGranted, reqCompass])
 
   // ── Sync labels ──────────────────────────────────────────────────
   useEffect(() => {
@@ -239,13 +338,30 @@ export default function App() {
     )
   }
 
+  // ── Responsive layout values ─────────────────────────────────────
+  const adminOffset   = isAdminMode ? (isMobile ? 40 : 52) : 0
+  const searchTop     = 16 + adminOffset
+  // On mobile: panel goes full-width with 12px margins on each side
+  const searchLeft    = isMobile ? 12 : 16
+  const searchWidth   = isMobile ? 'calc(100vw - 24px)' : 'min(340px, calc(100vw - 80px))'
+  // Right rail: on mobile push it to bottom-right above route sheet
+  const railRight     = 12
+  const railTop       = isMobile ? undefined : (16 + adminOffset)
+  const railBottom    = isMobile ? (hasRoute ? 180 : 24) : undefined
+
   // ═════════════════════════════════════════════════════════════════
   return (
-    <div style={{ position: 'relative', width: '100vw', height: '100vh', overflow: 'hidden', userSelect: 'none', background: isDark ? '#000' : '#f0f0f2' }}>
+    <div style={{ position: 'relative', width: '100vw', height: '100svh', overflow: 'hidden', userSelect: 'none', background: isDark ? '#000' : '#f0f0f2' }}>
 
       {/* Full-bleed map */}
       <div style={{ position: 'absolute', inset: 0, zIndex: 0 }}>
-        <MapCanvas isDark={isDark} pickingFromMap={pickMode} />
+        <MapCanvas
+          isDark={isDark}
+          pickingFromMap={pickMode}
+          heading={hasCompass ? heading : null}
+          gpsActive={gpsActive}
+          trackingEnabled={trackingEnabled}
+        />
       </div>
 
       {/* ── Admin banner ──────────────────────────────────────────── */}
@@ -268,9 +384,9 @@ export default function App() {
         ref={panelRef}
         style={{
           position: 'absolute',
-          top: isAdminMode ? 52 : 16,
-          left: 16,
-          width: 'min(340px, calc(100vw - 80px))',
+          top: searchTop,
+          left: searchLeft,
+          width: searchWidth,
           zIndex: 40,
           display: 'flex',
           flexDirection: 'column',
@@ -292,6 +408,33 @@ export default function App() {
             <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.12em', textTransform: 'uppercase', color: faint }}>
               NSU Wayfinder
             </span>
+
+            {/* Tracking pill — right-aligned */}
+            <div style={{ marginLeft: 'auto' }}>
+              <button
+                title={trackingEnabled ? (gpsActive ? 'GPS active' : 'Sensor tracking (GPS unavailable)') : 'Start location tracking'}
+                onClick={() => setTrackingEnabled(!trackingEnabled)}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: 5,
+                  padding: '4px 8px', borderRadius: 20, border: 'none', cursor: 'pointer',
+                  background: trackingEnabled
+                    ? (gpsActive ? 'rgba(16,185,129,0.15)' : 'rgba(37,99,235,0.12)')
+                    : (isDark ? 'rgba(255,255,255,0.07)' : 'rgba(0,0,0,0.05)'),
+                  transition: 'all 0.2s ease',
+                }}>
+                <Radio
+                  size={11}
+                  color={trackingEnabled ? (gpsActive ? '#10b981' : '#2563eb') : faint}
+                  style={{ animation: trackingEnabled ? 'glow-ping 2s ease infinite' : 'none' }}
+                />
+                <span style={{
+                  fontSize: 10, fontWeight: 600,
+                  color: trackingEnabled ? (gpsActive ? '#10b981' : '#2563eb') : faint,
+                }}>
+                  {trackingEnabled ? (gpsActive ? 'GPS' : 'Sensor') : 'Tracking off'}
+                </span>
+              </button>
+            </div>
           </div>
 
           {/* ── Origin input row ───────────────────────────────────── */}
@@ -357,7 +500,7 @@ export default function App() {
             {/* Origin dropdown */}
             {originOpen && filteredOrigin.length > 0 && (
               <div style={{
-                ...glassStyle(isDark, { padding: '6px', position: 'absolute', top: '100%', left: 0, right: 0, marginTop: 6, zIndex: 50, maxHeight: 220, overflowY: 'auto' }),
+                ...glassStyle(isDark, { padding: '6px', position: 'absolute', top: '100%', left: 0, right: 0, marginTop: 6, zIndex: 50, maxHeight: isMobile ? 180 : 220, overflowY: 'auto' }),
                 animation: 'dropdown-in 0.18s cubic-bezier(0.34,1.26,0.64,1) forwards',
               }}>
                 {filteredOrigin.map((p, i) => (
@@ -422,7 +565,7 @@ export default function App() {
             {/* Destination dropdown */}
             {destOpen && filteredDest.length > 0 && (
               <div style={{
-                ...glassStyle(isDark, { padding: '6px', position: 'absolute', top: '100%', left: 0, right: 0, marginTop: 6, zIndex: 50, maxHeight: 264, overflowY: 'auto' }),
+                ...glassStyle(isDark, { padding: '6px', position: 'absolute', top: '100%', left: 0, right: 0, marginTop: 6, zIndex: 50, maxHeight: isMobile ? 200 : 264, overflowY: 'auto' }),
                 animation: 'dropdown-in 0.18s cubic-bezier(0.34,1.26,0.64,1) forwards',
               }}>
                 {filteredDest.map((poi, i) => (
@@ -451,11 +594,12 @@ export default function App() {
         )}
       </div>
 
-      {/* ═══ RIGHT RAIL — theme toggle + floor pill ════════════════ */}
+      {/* ═══ RIGHT RAIL — theme toggle + level pill ════════════════ */}
       <div style={{
         position: 'absolute',
-        top: isAdminMode ? 60 : 16,
-        right: 16,
+        top: railTop,
+        bottom: railBottom,
+        right: railRight,
         zIndex: 40,
         display: 'flex',
         flexDirection: 'column',
@@ -469,7 +613,7 @@ export default function App() {
           onClick={() => setIsDark(d => !d)}
           style={{
             ...glassStyle(isDark),
-            width: 46, height: 46, borderRadius: 14,
+            width: isMobile ? 48 : 46, height: isMobile ? 48 : 46, borderRadius: 14,
             display: 'flex', alignItems: 'center', justifyContent: 'center',
             cursor: 'pointer', border: 'none',
             color: isDark ? '#fbbf24' : '#6e6e73',
@@ -478,23 +622,22 @@ export default function App() {
           {isDark ? <Sun size={18} /> : <Moon size={18} />}
         </button>
 
-        {/* Floor selector pill */}
+        {/* Level selector pill */}
         <div style={glassStyle(isDark, {
           display: 'flex', flexDirection: 'column', alignItems: 'center',
           padding: '8px 6px', gap: 4,
         })}>
-          {/* Label */}
+          {/* Label icon */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 4, paddingBottom: 4 }}>
             <Layers size={12} color={faint} />
           </div>
 
-          {/* Floor 2 button */}
           {([2, 1] as Level[]).map(lvl => (
             <button
               key={lvl}
               onClick={() => setActiveLevel(lvl)}
               style={{
-                width: 46, height: 46, borderRadius: 12,
+                width: isMobile ? 48 : 46, height: isMobile ? 48 : 46, borderRadius: 12,
                 display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
                 gap: 2, cursor: 'pointer', border: 'none',
                 background: activeLevel === lvl ? '#2563eb' : 'transparent',
@@ -516,15 +659,16 @@ export default function App() {
         <div style={{
           position: 'absolute', bottom: 0, left: 0, right: 0, zIndex: 40,
           display: 'flex', justifyContent: 'center',
-          padding: '8px 16px 24px',
+          padding: isMobile ? '8px 12px 0' : '8px 16px 24px',
           pointerEvents: 'none',
         }}>
           <div style={{
             ...glassStyle(isDark, {
-              width: '100%', maxWidth: 420,
+              width: '100%', maxWidth: isMobile ? '100%' : 420,
               animation: 'sheet-up 0.42s cubic-bezier(0.16,1,0.3,1) forwards',
               pointerEvents: 'all',
               padding: 0,
+              borderRadius: isMobile ? '20px 20px 0 0' : 20,
             }),
           }}>
             {/* Drag handle */}
@@ -593,7 +737,7 @@ export default function App() {
               </div>
             </div>
 
-            {/* Floor change hint */}
+            {/* Level change hint */}
             {routeStats.transitions.length > 0 && (
               <>
                 <div style={{ height: 1, background: isDark ? 'rgba(255,255,255,0.07)' : 'rgba(0,0,0,0.07)', margin: '0 18px' }} />
@@ -614,7 +758,7 @@ export default function App() {
             )}
 
             {/* Safe-area bottom padding for phones */}
-            <div style={{ height: 'env(safe-area-inset-bottom, 0px)', minHeight: 4 }} />
+            <div style={{ height: 'env(safe-area-inset-bottom, 0px)', minHeight: isMobile ? 16 : 4 }} />
           </div>
         </div>
       )}

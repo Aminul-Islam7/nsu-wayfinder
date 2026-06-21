@@ -38,6 +38,12 @@ interface AppStore {
   setRouteSteps: (steps: string[]) => void
   clearRoute: () => void
 
+  // Tracking
+  trackingEnabled: boolean
+  setTrackingEnabled: (v: boolean) => void
+  gpsActive: boolean
+  setGpsActive: (v: boolean) => void
+
   // Admin mode
   isAdminMode: boolean
   setAdminMode: (enabled: boolean) => void
@@ -94,6 +100,12 @@ export const useStore = create<AppStore>((set) => ({
   // Admin mode
   isAdminMode: false,
   setAdminMode: (enabled) => set({ isAdminMode: enabled }),
+
+  // Tracking
+  trackingEnabled: true,
+  setTrackingEnabled: (v) => set({ trackingEnabled: v }),
+  gpsActive: false,
+  setGpsActive: (v) => set({ gpsActive: v }),
 }))
 
 if (typeof window !== 'undefined') {
