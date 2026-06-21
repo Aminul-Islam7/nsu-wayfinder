@@ -187,6 +187,24 @@ export const MapCanvas: React.FC = () => {
 
 
 
+  // Create LineString geometry linking raw URL entry to snapped corridor path point
+  const startSnapLineData = useMemo(() => {
+    if (!route.rawOrigin || !route.origin || !route.destination || route.routeCoordinates.length === 0) return null
+    return {
+      type: 'FeatureCollection' as const,
+      features: [
+        {
+          type: 'Feature' as const,
+          geometry: {
+            type: 'LineString' as const,
+            coordinates: [route.rawOrigin, route.origin],
+          },
+          properties: {},
+        },
+      ],
+    }
+  }, [route.rawOrigin, route.origin, route.destination, route.routeCoordinates])
+
   // Find destination coordinate
   const destCoords = useMemo(() => {
     if (!route.destination || features.length === 0) return null
@@ -269,6 +287,17 @@ export const MapCanvas: React.FC = () => {
   }
 
 
+
+  const startSnapLineLayerStyle: any = {
+    id: 'start-snap-line',
+    type: 'line',
+    paint: {
+      'line-color': '#2563eb', // blue color matching "You" marker
+      'line-width': 3,
+      'line-dasharray': [2, 2], // dashed walking line
+      'line-opacity': 0.8,
+    },
+  }
 
   const destSnapLineLayerStyle: any = {
     id: 'dest-snap-line',
@@ -384,6 +413,13 @@ export const MapCanvas: React.FC = () => {
           </Source>
         )}
 
+        {/* Dotted snap line from You marker to start of route on path */}
+        {startSnapLineData && (
+          <Source id="start-snap-line-source" type="geojson" data={startSnapLineData}>
+            <Layer {...startSnapLineLayerStyle} />
+          </Source>
+        )}
+
         {/* Active calculated route */}
         {routeData && (
           <Source id="active-route-source" type="geojson" data={routeData}>
@@ -399,11 +435,11 @@ export const MapCanvas: React.FC = () => {
           </Source>
         )}
 
-        {/* Snapped Visitor Origin Marker (You) */}
-        {route.origin && (
+        {/* Visitor Origin Marker (You) */}
+        {(route.rawOrigin || route.origin) && (
           <Marker 
-            longitude={route.origin[0]} 
-            latitude={route.origin[1]} 
+            longitude={route.rawOrigin ? route.rawOrigin[0] : route.origin![0]} 
+            latitude={route.rawOrigin ? route.rawOrigin[1] : route.origin![1]} 
             anchor="center"
             style={{ zIndex: 9999 }}
           >
