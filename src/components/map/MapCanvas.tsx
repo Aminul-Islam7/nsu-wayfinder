@@ -399,16 +399,29 @@ export const MapCanvas: React.FC = () => {
           </Source>
         )}
 
-        {/* Snapped Visitor Origin Marker */}
+        {/* Snapped Visitor Origin Marker (You) */}
         {route.origin && (
-          <Marker longitude={route.origin[0]} latitude={route.origin[1]} anchor="center">
-            <div className="flex flex-col items-center select-none pointer-events-none animate-in fade-in zoom-in duration-300">
-              <div className="mb-1.5 bg-blue-500 text-white text-[9px] font-bold px-1.5 py-0.5 rounded-md shadow-md border border-background whitespace-nowrap">
+          <Marker 
+            longitude={route.origin[0]} 
+            latitude={route.origin[1]} 
+            anchor="center"
+            style={{ zIndex: 9999 }}
+          >
+            <div className="flex flex-col items-center select-none pointer-events-none animate-in fade-in zoom-in duration-300 relative z-[9999]">
+              <div 
+                style={{
+                  color: '#2563eb',
+                  textShadow: isDarkMode 
+                    ? '-1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000, 1px 1px 0 #000'
+                    : '-1px -1px 0 #fff, 1px -1px 0 #fff, -1px 1px 0 #fff, 1px 1px 0 #fff'
+                }}
+                className="mb-1 text-[10px] font-black tracking-wider uppercase whitespace-nowrap"
+              >
                 You
               </div>
-              <div className="w-4 h-4 rounded-full bg-blue-500 border-2 border-background flex items-center justify-center shadow-lg relative">
-                <span className="absolute w-full h-full rounded-full bg-blue-500/45 animate-ping" />
-                <div className="w-1.5 h-1.5 rounded-full bg-background" />
+              <div className="w-4.5 h-4.5 rounded-full bg-blue-600 border-[2.5px] border-white flex items-center justify-center shadow-lg relative">
+                <span className="absolute w-full h-full rounded-full bg-blue-500/50 animate-ping" />
+                <div className="w-1.5 h-1.5 rounded-full bg-white" />
               </div>
             </div>
           </Marker>
@@ -423,11 +436,22 @@ export const MapCanvas: React.FC = () => {
           const isTransit = type === 'transit'
           const isClassroom = category === 'classroom'
 
+          const labelColor = isTransit ? '#10b981' : isClassroom ? '#6366f1' : '#f43f5e'
+          const textShadowStyle = isDarkMode
+            ? '-1.2px -1.2px 0 #000, 1.2px -1.2px 0 #000, -1.2px 1.2px 0 #000, 1.2px 1.2px 0 #000'
+            : '-1.2px -1.2px 0 #fff, 1.2px -1.2px 0 #fff, -1.2px 1.2px 0 #fff, 1.2px 1.2px 0 #fff'
+
           return (
             <Marker key={key} longitude={lng} latitude={lat} anchor="bottom">
               <div className="group flex flex-col items-center cursor-default">
-                {/* Tooltip / Label */}
-                <div className="mb-1 bg-background/95 backdrop-blur-sm text-foreground text-[10px] font-bold px-2 py-0.5 rounded shadow-sm border border-border/80 whitespace-nowrap opacity-80 group-hover:opacity-100 transition-opacity pointer-events-none">
+                {/* Outlined Label without Background */}
+                <div 
+                  style={{
+                    color: labelColor,
+                    textShadow: textShadowStyle
+                  }}
+                  className="mb-1 text-[9.5px] font-extrabold tracking-wide whitespace-nowrap opacity-85 group-hover:opacity-100 transition-opacity pointer-events-none"
+                >
                   {name || 'POI'}
                 </div>
 

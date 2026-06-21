@@ -1,34 +1,44 @@
+import { useState, useEffect, useRef } from 'react'
 import { MapCanvas } from './components/map/MapCanvas'
 import { useStore } from './store/useStore'
-import { Compass, Database, GraduationCap, MapPin, ArrowUpDown } from 'lucide-react'
-
-// Custom Stairs SVG Icon
-const StairsIcon = ({ className }: { className?: string }) => (
-  <svg
-    viewBox="0 0 24 24"
-    stroke="currentColor"
-    strokeWidth="2.5"
-    fill="none"
-    strokeLinecap="round"
-    strokeLinejoin="round"
-    className={className}
-  >
-    <path d="M19 20H13V15H8V10H3V4" />
-  </svg>
-)
-
+import { Search, X } from 'lucide-react'
 
 function App() {
-  const { activeLevel, features, isLoading, error, route, setDestination, clearRoute } = useStore()
+  const { activeLevel, features, route, setDestination, clearRoute } = useStore()
+  const [searchQuery, setSearchQuery] = useState('')
+  const [isOpen, setIsOpen] = useState(false)
+  const dropdownRef = useRef<HTMLDivElement>(null)
 
-  // Calculate statistics for the active floor
+  // Sync search query with store destination on load/change
+  useEffect(() => {
+    if (!route.destination) {
+      setSearchQuery('')
+    } else {
+      const destFeature = features.find((f) => f.properties?._feature_id === route.destination)
+      if (destFeature) {
+        setSearchQuery(destFeature.properties.name || '')
+      }
+    }
+  }, [route.destination, features])
+
+  // Handle clicking outside to close dropdown
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+        setIsOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [])
+
   const levelFeatures = features.filter((f) => f.properties?.level === activeLevel)
-  const poiCount = levelFeatures.filter((f) => f.properties?.type === 'poi').length
-  const pathCount = levelFeatures.filter((f) => f.properties?.type === 'path').length
-  const transitCount = levelFeatures.filter((f) => f.properties?.type === 'transit').length
-
   const pois = levelFeatures.filter((f) => f.properties?.type === 'poi')
   const sortedPois = [...pois].sort((a, b) => (a.properties?.name || '').localeCompare(b.properties?.name || ''))
+
+  const filteredPois = sortedPois.filter(poi =>
+    (poi.properties?.name || '').toLowerCase().includes(searchQuery.toLowerCase())
+  )
 
   return (
     <div className="relative w-screen h-screen overflow-hidden bg-background text-foreground select-none">
@@ -37,144 +47,66 @@ function App() {
         <MapCanvas />
       </div>
 
-      {/* Floating Control Dashboard (glassmorphism overlay) */}
-      <aside className="absolute top-4 left-4 z-40 w-80 max-h-[calc(100vh-2rem)] overflow-y-auto bg-background/80 backdrop-blur-md border border-border/80 rounded-2xl shadow-xl p-5 flex flex-col gap-6 animate-in slide-in-from-left duration-500">
-        {/* Header block */}
-        <div className="flex flex-col gap-1.5">
-          <div className="flex items-center gap-2">
-            <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center text-primary">
-              <Compass className="w-5 h-5" />
-            </div>
-            <h1 className="text-xl font-bold tracking-tight bg-gradient-to-r from-blue-600 to-indigo-600 dark:from-blue-400 dark:to-indigo-400 bg-clip-text text-transparent">
-              NSU Wayfinder
-            </h1>
+      {/* Floating Clean Search Container */}
+      <aside 
+        ref={dropdownRef}
+        className="absolute top-4 left-4 z-40 w-80 flex flex-col gap-2 animate-in slide-in-from-left duration-500"
+      >
+        <div className="relative w-full bg-background/85 backdrop-blur-md border border-border/80 rounded-2xl shadow-xl p-1.5 flex items-center gap-2">
+          <div className="pl-3.5 text-muted-foreground/80">
+            <Search className="w-5 h-5" />
           </div>
-          <p className="text-xs text-muted-foreground font-medium">
-            Indoor navigation for NAC / SAC / Library complex
-          </p>
-        </div>
-
-        {/* Database Sync Status */}
-        <div className="flex items-center justify-between p-3 bg-secondary/50 rounded-xl border border-border/40 text-xs">
-          <div className="flex items-center gap-2">
-            <Database className="w-4 h-4 text-muted-foreground" />
-            <span className="font-semibold text-muted-foreground">Supabase Live Connection</span>
-          </div>
-          <div className="flex items-center gap-1.5 font-medium">
-            {isLoading ? (
-              <>
-                <span className="w-2 h-2 rounded-full bg-warning animate-pulse" />
-                <span className="text-warning">Syncing...</span>
-              </>
-            ) : error ? (
-              <>
-                <span className="w-2 h-2 rounded-full bg-destructive" />
-                <span className="text-destructive">Offline</span>
-              </>
-            ) : (
-              <>
-                <span className="w-2 h-2 rounded-full bg-success" />
-                <span className="text-success text-[10px] uppercase font-bold tracking-wider">Connected</span>
-              </>
-            )}
-          </div>
-        </div>
-
-        {/* Destination Picker */}
-        <div className="flex flex-col gap-2.5">
-          <label htmlFor="destination-select" className="text-xs font-bold text-muted-foreground uppercase tracking-wider">
-            Choose Destination
-          </label>
-          <select
-            id="destination-select"
-            value={route.destination || ''}
-            onChange={(e) => setDestination(e.target.value || null)}
-            className="w-full bg-card border border-border/85 rounded-xl px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/50 transition cursor-pointer"
-          >
-            <option value="">-- Select Room / POI --</option>
-            {sortedPois.map((poi) => (
-              <option key={poi.properties._feature_id} value={poi.properties._feature_id}>
-                {poi.properties.name} ({poi.properties.building})
-              </option>
-            ))}
-          </select>
-
-          {route.destination && (
+          <input
+            type="text"
+            placeholder="Search room, lounge, library..."
+            value={searchQuery}
+            onChange={(e) => {
+              setSearchQuery(e.target.value)
+              setIsOpen(true)
+            }}
+            onFocus={() => setIsOpen(true)}
+            className="w-full bg-transparent border-none text-sm text-foreground placeholder:text-muted-foreground/60 focus:outline-none py-2 pr-8 font-medium"
+          />
+          {searchQuery && (
             <button
-              onClick={() => clearRoute()}
-              className="w-full py-2 bg-secondary text-secondary-foreground font-semibold rounded-xl hover:bg-secondary/80 transition text-xs"
+              onClick={() => {
+                clearRoute()
+                setSearchQuery('')
+                setIsOpen(false)
+              }}
+              className="absolute right-3.5 p-1 rounded-full hover:bg-muted text-muted-foreground transition-colors"
             >
-              Clear Route
+              <X className="w-4 h-4" />
             </button>
           )}
         </div>
 
-        {/* Floor Statistics Panel */}
-        <div className="flex flex-col gap-2">
-          <h2 className="text-xs font-bold text-muted-foreground uppercase tracking-wider">
-            Floor Statistics — Level {activeLevel}
-          </h2>
-          <div className="grid grid-cols-3 gap-2">
-            <div className="flex flex-col items-center justify-center p-2.5 bg-card/60 rounded-xl border border-border/50 shadow-sm">
-              <span className="text-lg font-bold text-foreground">{poiCount}</span>
-              <span className="text-[10px] font-semibold text-muted-foreground">POIs</span>
-            </div>
-            <div className="flex flex-col items-center justify-center p-2.5 bg-card/60 rounded-xl border border-border/50 shadow-sm">
-              <span className="text-lg font-bold text-foreground">{pathCount}</span>
-              <span className="text-[10px] font-semibold text-muted-foreground">Paths</span>
-            </div>
-            <div className="flex flex-col items-center justify-center p-2.5 bg-card/60 rounded-xl border border-border/50 shadow-sm">
-              <span className="text-lg font-bold text-foreground">{transitCount}</span>
-              <span className="text-[10px] font-semibold text-muted-foreground">Transit</span>
-            </div>
+        {/* Floating suggestion dropdown */}
+        {isOpen && filteredPois.length > 0 && (
+          <div className="w-full bg-background/90 backdrop-blur-md border border-border/75 rounded-2xl shadow-xl max-h-64 overflow-y-auto p-1.5 flex flex-col gap-0.5 animate-in fade-in slide-in-from-top-2 duration-200">
+            {filteredPois.map((poi) => (
+              <button
+                key={poi.properties._feature_id}
+                onClick={() => {
+                  setDestination(poi.properties._feature_id)
+                  setSearchQuery(poi.properties.name)
+                  setIsOpen(false)
+                }}
+                className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-accent text-left text-sm font-medium text-foreground transition-all duration-150"
+              >
+                <div className={`w-2.5 h-2.5 rounded-full ${
+                  poi.properties.category === 'classroom' ? 'bg-indigo-500' : 'bg-rose-500'
+                }`} />
+                <div className="flex flex-col">
+                  <span className="font-semibold">{poi.properties.name}</span>
+                  <span className="text-[10px] text-muted-foreground/90 font-bold">
+                    {poi.properties.building} • Level {poi.properties.level}
+                  </span>
+                </div>
+              </button>
+            ))}
           </div>
-        </div>
-
-        {/* Map Legend */}
-        <div className="flex flex-col gap-3">
-          <h2 className="text-xs font-bold text-muted-foreground uppercase tracking-wider">
-            Map Legend
-          </h2>
-          <div className="flex flex-col gap-2.5 text-xs text-foreground font-medium">
-            <div className="flex items-center gap-2.5">
-              <div className="w-4 h-4 bg-primary/10 border border-primary/40 rounded shadow-sm" />
-              <span>Building Footprint</span>
-            </div>
-            <div className="flex items-center gap-2.5">
-              <div className="w-4 h-0.5 bg-indigo-500 rounded" />
-              <span>Corridor path network</span>
-            </div>
-            <div className="flex items-center gap-2.5">
-              <div className="w-4 h-4 rounded-full bg-rose-500 flex items-center justify-center text-white scale-90">
-                <MapPin className="w-2.5 h-2.5" />
-              </div>
-              <span>General POI (Restroom, lounge, etc.)</span>
-            </div>
-            <div className="flex items-center gap-2.5">
-              <div className="w-4 h-4 rounded-full bg-indigo-500 flex items-center justify-center text-white scale-90">
-                <GraduationCap className="w-2.5 h-2.5" />
-              </div>
-              <span>Classrooms / Academic Rooms</span>
-            </div>
-            <div className="flex items-center gap-2.5">
-              <div className="w-4 h-4 rounded-full bg-emerald-500 flex items-center justify-center text-white scale-90">
-                <ArrowUpDown className="w-2.5 h-2.5" />
-              </div>
-              <span>Elevator / Lifts</span>
-            </div>
-            <div className="flex items-center gap-2.5">
-              <div className="w-4 h-4 rounded-full bg-emerald-500 flex items-center justify-center text-white scale-90">
-                <StairsIcon className="w-2.5 h-2.5" />
-              </div>
-              <span>Staircases</span>
-            </div>
-          </div>
-        </div>
-
-        {/* Footer info */}
-        <footer className="mt-auto pt-4 border-t border-border/40 text-[10px] text-muted-foreground text-center font-medium">
-          North South University Indoors &copy; {new Date().getFullYear()}
-        </footer>
+        )}
       </aside>
     </div>
   )

@@ -60,6 +60,9 @@ Transit nodes (lifts/staircases) at the same physical XY on L1 and L2 (e.g. `nac
 - A destination snap line is rendered as a dashed emerald-green line connecting the end of the calculated route on the path network directly to the destination POI marker (representing the walking path from the corridor to the room).
 - Corridor paths are rendered on the map always (no longer restricted to admin mode) as very thin (1.5px) grey lines (`#cbd5e1` in light, `#475569` in dark) with 0.65 opacity to represent walkable corridors without causing visual clutter.
 - The raw Scan Location marker and its dotted snap line are removed. Instead, the snapped origin point is rendered directly on the path as a single starting point marker labeled "You".
+- Aside overlay is cleaned up to only contain a floating, glassmorphic search combobox that acts as a type-and-search dropdown for POIs.
+- POI labels are rendered without backgrounds, using a text outline stroke (black in dark mode, white in light mode) with the text color matching the POI marker color (indigo for classrooms, emerald for transit, rose for other POIs) for a clean, modern aesthetic.
+- The "You" starting marker is styled as a solid blue circle with a thick white border, glowing blue animation, and set to the highest z-index (9999) to prevent it from rendering under other map elements.
 
 ### 2026-06-21 — Snapping Segment-splitting Intersection Bug (Fixed)
 - **Problem**: Snapped origin and destination nodes were being created in the graph but remained completely isolated (size 1 components with 0 neighbors). Dijkstra would silently return empty routes. This was because `getOrCreateNodeKey(snapCoords)` was called before checking `g.hasNode(snapKey)`. Since `getOrCreateNodeKey` immediately adds the node to the graph when it doesn't exist, `g.hasNode(snapKey)` always returned `true` immediately after, causing the snapping function to return early and bypass the segment-splitting/edge-adding logic entirely.
