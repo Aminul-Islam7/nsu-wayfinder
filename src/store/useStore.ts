@@ -5,6 +5,7 @@ export type Level = 1 | 2
 
 export interface RouteState {
   origin: [number, number] | null   // [lng, lat] snapped start
+  rawOrigin: [number, number] | null // [lng, lat] raw parsed from URL
   destination: string | null        // feature_id of destination POI
   steps: string[]                   // turn-by-turn instructions
   transitLevel: Level | null        // level being switched to mid-route
@@ -29,6 +30,7 @@ interface AppStore {
   // Routing
   route: RouteState
   setOrigin: (coords: [number, number] | null) => void
+  setRawOrigin: (coords: [number, number] | null) => void
   setDestination: (featureId: string | null) => void
   setRouteSteps: (steps: string[]) => void
   clearRoute: () => void
@@ -40,6 +42,7 @@ interface AppStore {
 
 const defaultRoute: RouteState = {
   origin: null,
+  rawOrigin: null,
   destination: null,
   steps: [],
   transitLevel: null,
@@ -77,6 +80,7 @@ export const useStore = create<AppStore>((set) => ({
   // Routing
   route: defaultRoute,
   setOrigin:      (coords) => set((s) => ({ route: { ...s.route, origin: coords } })),
+  setRawOrigin:   (coords) => set((s) => ({ route: { ...s.route, rawOrigin: coords } })),
   setDestination: (id)     => set((s) => ({ route: { ...s.route, destination: id } })),
   setRouteSteps:  (steps)  => set((s) => ({ route: { ...s.route, steps } })),
   clearRoute:              () => set({ route: defaultRoute }),

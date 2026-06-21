@@ -5,6 +5,7 @@ import 'maplibre-gl/dist/maplibre-gl.css'
 import { useStore } from '../../store/useStore'
 import type { Level } from '../../store/useStore'
 import { GraduationCap, MapPin, ArrowUpDown, Info } from 'lucide-react'
+import { nearestPointOnLine, point } from '@turf/turf'
 
 // Custom Stairs SVG Icon
 const StairsIcon = ({ className }: { className?: string }) => (
@@ -48,6 +49,9 @@ export const MapCanvas: React.FC = () => {
     isLoading,
     error,
     fetchFeatures,
+    route,
+    setOrigin,
+    setRawOrigin,
   } = useStore()
 
   const [isDarkMode, setIsDarkMode] = useState(false)
@@ -64,13 +68,67 @@ export const MapCanvas: React.FC = () => {
     fetchFeatures()
   }, [fetchFeatures])
 
+  // Handle URL Parameter Parsing & Snapping
+  useEffect(() => {
+    if (isLoading || features.length === 0) return
+
+    const params = new URLSearchParams(window.location.search)
+    const latParam = params.get('lat')
+    const lngParam = params.get('lng') || params.get('lon') || params.get('longitude')
+    const levelParam = params.get('level')
+
+    if (latParam && lngParam) {
+      const rawLat = parseFloat(latParam)
+      const rawLng = parseFloat(lngParam)
+      const rawLevel = levelParam ? (parseInt(levelParam) as Level) : (1 as Level)
+
+      if (!isNaN(rawLat) && !isNaN(rawLng)) {
+        setRawOrigin([rawLng, rawLat])
+        if (activeLevel !== rawLevel) {
+          setActiveLevel(rawLevel)
+        }
+
+        // Find nearest path on this level
+        const levelPaths = features.filter(
+          (f) =>
+            f.geometry &&
+            f.properties?.type === 'path' &&
+            f.properties?.level === rawLevel
+        )
+
+        if (levelPaths.length > 0) {
+          try {
+            const pt = point([rawLng, rawLat])
+            let minDistance = Infinity
+            let snappedCoord: [number, number] | null = null
+
+            for (const pathFeature of levelPaths) {
+              const snapped = nearestPointOnLine(pathFeature, pt)
+              const dist = snapped.properties?.dist ?? Infinity
+              if (dist < minDistance) {
+                minDistance = dist
+                snappedCoord = snapped.geometry.coordinates as [number, number]
+              }
+            }
+
+            if (snappedCoord) {
+              setOrigin(snappedCoord)
+            }
+          } catch (e) {
+            console.error('Turf snapping error:', e)
+          }
+        }
+      }
+    }
+  }, [features, isLoading, activeLevel, setActiveLevel, setOrigin, setRawOrigin])
+
   // Filter features for the building footprint
   const footprintData = useMemo(() => {
     const filtered = features.filter(
       (f) => f.geometry && f.properties?.type === 'footprint' && f.properties?.level === activeLevel
     )
     return {
-      type: 'FeatureCollection',
+      type: 'FeatureCollection' as const,
       features: filtered,
     }
   }, [features, activeLevel])
@@ -81,7 +139,7 @@ export const MapCanvas: React.FC = () => {
       (f) => f.geometry && f.properties?.type === 'path' && f.properties?.level === activeLevel
     )
     return {
-      type: 'FeatureCollection',
+      type: 'FeatureCollection' as const,
       features: filtered,
     }
   }, [features, activeLevel])
@@ -96,6 +154,24 @@ export const MapCanvas: React.FC = () => {
         f.properties?.level === activeLevel
     )
   }, [features, activeLevel])
+
+  // Create LineString geometry linking raw URL entry to snapped corridor path point
+  const snapLineData = useMemo(() => {
+    if (!route.rawOrigin || !route.origin) return null
+    return {
+      type: 'FeatureCollection' as const,
+      features: [
+        {
+          type: 'Feature' as const,
+          geometry: {
+            type: 'LineString' as const,
+            coordinates: [route.rawOrigin, route.origin],
+          },
+          properties: {},
+        },
+      ],
+    }
+  }, [route.rawOrigin, route.origin])
 
   // MapLibre Layer Styles for Building Outlines
   const footprintLayerStyle: any = {
@@ -122,11 +198,13 @@ export const MapCanvas: React.FC = () => {
   const pathsLayerStyle: any = {
     id: 'corridor-paths',
     type: 'line',
+    layout: {
+      'line-cap': 'round',
+      'line-join': 'round',
+    },
     paint: {
       'line-color': isDarkMode ? '#6366f1' : '#4f46e5',
       'line-width': 4,
-      'line-cap': 'round',
-      'line-join': 'round',
       'line-opacity': 0.7,
     },
   }
@@ -134,12 +212,25 @@ export const MapCanvas: React.FC = () => {
   const pathsBorderLayerStyle: any = {
     id: 'corridor-paths-border',
     type: 'line',
+    layout: {
+      'line-cap': 'round',
+      'line-join': 'round',
+    },
     paint: {
       'line-color': isDarkMode ? '#1e1b4b' : '#e0e7ff',
       'line-width': 6,
-      'line-cap': 'round',
-      'line-join': 'round',
       'line-opacity': 0.4,
+    },
+  }
+
+  const snapLineLayerStyle: any = {
+    id: 'snap-line',
+    type: 'line',
+    paint: {
+      'line-color': isDarkMode ? '#f43f5e' : '#e11d48', // rose color
+      'line-width': 2,
+      'line-dasharray': [2, 2], // dotted
+      'line-opacity': 0.8,
     },
   }
 
@@ -217,6 +308,43 @@ export const MapCanvas: React.FC = () => {
             <Layer {...pathsBorderLayerStyle} />
             <Layer {...pathsLayerStyle} />
           </Source>
+        )}
+
+        {/* Dotted snap line from raw origin to snapped point */}
+        {snapLineData && (
+          <Source type="geojson" data={snapLineData}>
+            <Layer {...snapLineLayerStyle} />
+          </Source>
+        )}
+
+        {/* Raw Visitor Origin Marker (Scan Location) */}
+        {route.rawOrigin && (
+          <Marker longitude={route.rawOrigin[0]} latitude={route.rawOrigin[1]} anchor="center">
+            <div className="flex flex-col items-center select-none pointer-events-none animate-in fade-in zoom-in duration-300">
+              <div className="mb-1.5 bg-rose-500 text-white text-[9px] font-bold px-1.5 py-0.5 rounded-md shadow-md border border-background whitespace-nowrap">
+                Scan Location
+              </div>
+              <div className="w-4 h-4 rounded-full bg-rose-500 border-2 border-background flex items-center justify-center shadow-lg relative">
+                <span className="absolute w-full h-full rounded-full bg-rose-500/40 animate-ping" />
+                <div className="w-1.5 h-1.5 rounded-full bg-background" />
+              </div>
+            </div>
+          </Marker>
+        )}
+
+        {/* Snapped Visitor Origin Marker */}
+        {route.origin && (
+          <Marker longitude={route.origin[0]} latitude={route.origin[1]} anchor="center">
+            <div className="flex flex-col items-center select-none pointer-events-none animate-in fade-in zoom-in duration-300">
+              <div className="mb-1.5 bg-blue-500 text-white text-[9px] font-bold px-1.5 py-0.5 rounded-md shadow-md border border-background whitespace-nowrap">
+                You Are Here
+              </div>
+              <div className="w-4 h-4 rounded-full bg-blue-500 border-2 border-background flex items-center justify-center shadow-lg relative">
+                <span className="absolute w-full h-full rounded-full bg-blue-500/45 animate-ping" />
+                <div className="w-1.5 h-1.5 rounded-full bg-background" />
+              </div>
+            </div>
+          </Marker>
         )}
 
         {/* POIs and Transit Nodes (Markers) */}
