@@ -72,4 +72,8 @@ Transit nodes (lifts/staircases) at the same physical XY on L1 and L2 (e.g. `nac
 - **Problem**: The dashed start snap line was visible on initial mount even when no destination was selected, creating visual clutter.
 - **Fix**: Updated `startSnapLineData` `useMemo` in `MapCanvas.tsx` to return `null` if `route.destination` is not set or `route.routeCoordinates` is empty. The snap line now renders only when active routing is underway.
 
+### 2026-06-21 — Overlaid Multi-floor Path Routing
+- **Problem**: Moving between floors required user interaction with floating "Continue to L2" buttons, and routes on inactive floors were hidden.
+- **Fix**: Wiped transition buttons. Plotted active floor route as a solid blue (#2563eb) line without borders. Plotted inactive floor route segments as dashed violet (#8b5cf6) lines overlaid on the current level. Updated markersData to include cross-floor destination POIs, and styled cross-floor markers (and inactive You marker) with 60% opacity and a floor suffix (e.g. `(L2)`). Hidden all non-destination POI pin icons during active routing, keeping only their text labels visible.
+
 

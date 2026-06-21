@@ -12,8 +12,8 @@
   - [x] Graph construction (undirected).
   - [x] Single-floor pathfinding and route rendering.
 
-- [ ] **Phase 3: Multi-floor**
-  - Transit edges, level switching, "Continue to Level X" flow.
+- [x] **Phase 3: Multi-floor**
+  - Transit edges, level switching, and overlaid visualization.
 
 - [ ] **Phase 4: Visitor UX Polish**
   - Destination search, turn-by-turn bottom sheet, dark mode, responsive UI.
