@@ -1,4 +1,5 @@
 import { create } from 'zustand'
+import { supabase } from '../lib/supabase'
 
 export type Level = 1 | 2
 
@@ -13,6 +14,13 @@ interface AppStore {
   // Map state
   activeLevel: Level
   setActiveLevel: (level: Level) => void
+  features: any[]
+  setFeatures: (features: any[]) => void
+  isLoading: boolean
+  setIsLoading: (loading: boolean) => void
+  error: string | null
+  setError: (err: string | null) => void
+  fetchFeatures: () => Promise<void>
 
   // Selection
   selectedFeatureId: string | null
@@ -41,6 +49,26 @@ export const useStore = create<AppStore>((set) => ({
   // Map state
   activeLevel: 1,
   setActiveLevel: (level) => set({ activeLevel: level }),
+  features: [],
+  setFeatures: (features) => set({ features }),
+  isLoading: false,
+  setIsLoading: (isLoading) => set({ isLoading }),
+  error: null,
+  setError: (error) => set({ error }),
+  fetchFeatures: async () => {
+    set({ isLoading: true, error: null })
+    try {
+      const { data, error } = await supabase.rpc('get_feature_collection')
+      if (error) throw error
+      if (data && data.features) {
+        set({ features: data.features, isLoading: false })
+      } else {
+        set({ features: [], isLoading: false })
+      }
+    } catch (err: any) {
+      set({ error: err.message || 'Failed to fetch features', isLoading: false })
+    }
+  },
 
   // Selection
   selectedFeatureId: null,
@@ -57,3 +85,4 @@ export const useStore = create<AppStore>((set) => ({
   isAdminMode: false,
   setAdminMode: (enabled) => set({ isAdminMode: enabled }),
 }))
+
