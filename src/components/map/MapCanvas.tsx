@@ -1,5 +1,6 @@
-import React, { useEffect, useMemo, useState } from 'react'
+import React, { useCallback, useEffect, useMemo } from 'react'
 import Map, { Source, Layer, Marker, NavigationControl } from 'react-map-gl/maplibre'
+import type { MapMouseEvent } from 'react-map-gl/maplibre'
 import maplibregl from 'maplibre-gl'
 import 'maplibre-gl/dist/maplibre-gl.css'
 import { useStore } from '../../store/useStore'
@@ -7,6 +8,11 @@ import type { Level } from '../../store/useStore'
 import { GraduationCap, MapPin, ArrowUpDown, Info } from 'lucide-react'
 import { nearestPointOnLine, point } from '@turf/turf'
 import { computeShortestPath } from '../../lib/routing'
+
+interface MapCanvasProps {
+  isDark: boolean
+  pickingFromMap?: boolean
+}
 
 // Custom Stairs SVG Icon
 const StairsIcon = ({ className }: { className?: string }) => (
@@ -42,7 +48,7 @@ const INITIAL_VIEW_STATE = {
 const MAP_STYLE_LIGHT = 'https://basemaps.cartocdn.com/gl/positron-gl-style/style.json'
 const MAP_STYLE_DARK = 'https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json'
 
-export const MapCanvas: React.FC = () => {
+export const MapCanvas: React.FC<MapCanvasProps> = ({ isDark: isDarkMode, pickingFromMap = false }) => {
   const {
     activeLevel,
     setActiveLevel,
@@ -54,24 +60,14 @@ export const MapCanvas: React.FC = () => {
     setOrigin,
     setRawOrigin,
     setRouteCoordinates,
-    isAdminMode,
   } = useStore()
-
-  const [isDarkMode, setIsDarkMode] = useState(false)
-
-  // Detect dark mode from system preference or class name
-  useEffect(() => {
-    const isDark = document.documentElement.classList.contains('dark') ||
-      window.matchMedia('(prefers-color-scheme: dark)').matches
-    setIsDarkMode(isDark)
-  }, [])
 
   // Fetch features on mount
   useEffect(() => {
     fetchFeatures()
   }, [fetchFeatures])
 
-  // Handle URL Parameter Parsing & Snapping
+  // Handle URL Parameter Parsing & Snapping — runs once after features load
   useEffect(() => {
     if (isLoading || features.length === 0) return
 
@@ -80,50 +76,35 @@ export const MapCanvas: React.FC = () => {
     const lngParam = params.get('lng') || params.get('lon') || params.get('longitude')
     const levelParam = params.get('level')
 
-    if (latParam && lngParam) {
-      const rawLat = parseFloat(latParam)
-      const rawLng = parseFloat(lngParam)
-      const rawLevel = levelParam ? (parseInt(levelParam) as Level) : (1 as Level)
+    if (!latParam || !lngParam) return
 
-      if (!isNaN(rawLat) && !isNaN(rawLng)) {
-        setRawOrigin([rawLng, rawLat])
-        if (activeLevel !== rawLevel) {
-          setActiveLevel(rawLevel)
+    const rawLat = parseFloat(latParam)
+    const rawLng = parseFloat(lngParam)
+    const rawLevel = levelParam ? (parseInt(levelParam) as Level) : (1 as Level)
+
+    if (isNaN(rawLat) || isNaN(rawLng)) return
+
+    setRawOrigin([rawLng, rawLat])
+    setActiveLevel(rawLevel)
+
+    const levelPaths = features.filter(
+      (f) => f.geometry && f.properties?.type === 'path' && f.properties?.level === rawLevel
+    )
+    if (levelPaths.length > 0) {
+      try {
+        const pt = point([rawLng, rawLat])
+        let minDist = Infinity
+        let snapped: [number, number] | null = null
+        for (const pf of levelPaths) {
+          const s = nearestPointOnLine(pf, pt)
+          const d = s.properties?.dist ?? Infinity
+          if (d < minDist) { minDist = d; snapped = s.geometry.coordinates as [number, number] }
         }
-
-        // Find nearest path on this level
-        const levelPaths = features.filter(
-          (f) =>
-            f.geometry &&
-            f.properties?.type === 'path' &&
-            f.properties?.level === rawLevel
-        )
-
-        if (levelPaths.length > 0) {
-          try {
-            const pt = point([rawLng, rawLat])
-            let minDistance = Infinity
-            let snappedCoord: [number, number] | null = null
-
-            for (const pathFeature of levelPaths) {
-              const snapped = nearestPointOnLine(pathFeature, pt)
-              const dist = snapped.properties?.dist ?? Infinity
-              if (dist < minDistance) {
-                minDistance = dist
-                snappedCoord = snapped.geometry.coordinates as [number, number]
-              }
-            }
-
-            if (snappedCoord) {
-              setOrigin(snappedCoord, rawLevel)
-            }
-          } catch (e) {
-            console.error('Turf snapping error:', e)
-          }
-        }
-      }
+        if (snapped) setOrigin(snapped, rawLevel)
+      } catch (e) { console.error('Turf snap error:', e) }
     }
-  }, [features, isLoading, activeLevel, setActiveLevel, setOrigin, setRawOrigin])
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [features, isLoading]) // intentionally omit setActiveLevel/setOrigin/setRawOrigin to prevent re-runs
 
   // Trigger pathfinding when origin and destination are selected
   useEffect(() => {
@@ -470,34 +451,24 @@ export const MapCanvas: React.FC = () => {
     )
   }
 
+  // Map click handler for pick-from-map mode
+  const handleMapClick = useCallback((e: MapMouseEvent) => {
+    if (!pickingFromMap) return
+    const { lng, lat } = e.lngLat
+    document.dispatchEvent(new CustomEvent('map:pick-origin', {
+      detail: { lng, lat, level: activeLevel }
+    }))
+  }, [pickingFromMap, activeLevel])
+
   return (
-    <div className="relative w-full h-full">
+    <div className={`relative w-full h-full ${pickingFromMap ? 'cursor-crosshair' : ''}`}>
       {/* Loading state indicator */}
       {isLoading && (
-        <div className="absolute top-4 left-4 z-50 flex items-center gap-3 bg-background/90 backdrop-blur-md px-4 py-2.5 rounded-xl shadow-md border border-border animate-pulse">
+        <div className="absolute top-4 left-1/2 -translate-x-1/2 z-50 flex items-center gap-3 bg-background/90 backdrop-blur-md px-4 py-2.5 rounded-xl shadow-md border border-border animate-pulse">
           <div className="w-2 h-2 rounded-full bg-primary animate-ping" />
           <span className="text-xs font-medium text-foreground">Syncing floor plan data...</span>
         </div>
       )}
-
-      {/* Level Switcher (Floating HUD) */}
-      <div className="absolute top-4 right-4 z-50 flex flex-col gap-2">
-        <div className="bg-background/85 backdrop-blur-md p-1.5 rounded-xl shadow-lg border border-border flex flex-col gap-1">
-          {( [2, 1] as Level[] ).map((lvl) => (
-            <button
-              key={lvl}
-              onClick={() => setActiveLevel(lvl)}
-              className={`w-10 h-10 rounded-lg flex items-center justify-center font-bold text-sm transition-all duration-200 ${
-                activeLevel === lvl
-                  ? 'bg-primary text-primary-foreground shadow-sm scale-105'
-                  : 'text-muted-foreground hover:bg-accent hover:text-foreground'
-              }`}
-            >
-              L{lvl}
-            </button>
-          ))}
-        </div>
-      </div>
 
       {/* Main Map Canvas */}
       <Map
@@ -507,6 +478,8 @@ export const MapCanvas: React.FC = () => {
         style={{ width: '100%', height: '100%' }}
         maxZoom={21}
         minZoom={16}
+        attributionControl={false}
+        onClick={handleMapClick}
       >
         <NavigationControl position="bottom-right" showCompass={false} />
 
