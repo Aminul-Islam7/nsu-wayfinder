@@ -420,7 +420,7 @@ export const MapCanvas: React.FC = () => {
           <Marker longitude={route.origin[0]} latitude={route.origin[1]} anchor="center">
             <div className="flex flex-col items-center select-none pointer-events-none animate-in fade-in zoom-in duration-300">
               <div className="mb-1.5 bg-blue-500 text-white text-[9px] font-bold px-1.5 py-0.5 rounded-md shadow-md border border-background whitespace-nowrap">
-                You Are Here
+                You
               </div>
               <div className="w-4 h-4 rounded-full bg-blue-500 border-2 border-background flex items-center justify-center shadow-lg relative">
                 <span className="absolute w-full h-full rounded-full bg-blue-500/45 animate-ping" />

@@ -43,8 +43,8 @@ export function computeShortestPath(
         const currKey = getNodeKey(coords[i])
         const d = distance(point(coords[i - 1]), point(coords[i]), { units: 'meters' })
         
-        if (!g.hasEdge(prevKey, currKey)) {
-          g.addEdge(prevKey, currKey, { weight: d })
+        if (!g.hasUndirectedEdge(prevKey, currKey)) {
+          g.addUndirectedEdge(prevKey, currKey, { weight: d })
         }
       }
     }
@@ -102,12 +102,12 @@ export function computeShortestPath(
     const distA = distance(point(pA), point(snapCoords), { units: 'meters' })
     const distB = distance(point(snapCoords), point(pB), { units: 'meters' })
 
-    g.addEdge(keyA, snapKey, { weight: distA })
-    g.addEdge(snapKey, keyB, { weight: distB })
+    g.addUndirectedEdge(keyA, snapKey, { weight: distA })
+    g.addUndirectedEdge(snapKey, keyB, { weight: distB })
 
     // Remove direct edge if it exists
-    if (g.hasEdge(keyA, keyB)) {
-      g.dropEdge(keyA, keyB)
+    if (g.hasUndirectedEdge(keyA, keyB)) {
+      g.dropUndirectedEdge(keyA, keyB)
     }
 
     return snapKey
