@@ -504,8 +504,8 @@ export default function App() {
                 transition: 'all 0.22s cubic-bezier(0.34,1.26,0.64,1)',
                 fontFamily: 'inherit',
               }}>
-              <span style={{ fontSize: 15, fontWeight: 800, lineHeight: 1 }}>{lvl === 1 ? 'G' : '2'}</span>
-              <span style={{ fontSize: 8, fontWeight: 600, opacity: 0.75, lineHeight: 1 }}>FLOOR</span>
+              <span style={{ fontSize: 15, fontWeight: 800, lineHeight: 1 }}>{lvl}</span>
+              <span style={{ fontSize: 8, fontWeight: 600, opacity: 0.75, lineHeight: 1 }}>LEVEL</span>
             </button>
           ))}
         </div>
@@ -605,7 +605,7 @@ export default function App() {
                     Take a lift or stairs to{' '}
                     {routeStats.transitions.map((t, i) => (
                       <strong key={i} style={{ color: '#8b5cf6' }}>
-                        {i > 0 ? ', then ' : ''}Floor {t.to}
+                        {i > 0 ? ', then ' : ''}Level {t.to}
                       </strong>
                     ))}
                   </span>
