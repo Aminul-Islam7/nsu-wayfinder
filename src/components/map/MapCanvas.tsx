@@ -54,6 +54,7 @@ export const MapCanvas: React.FC = () => {
     setOrigin,
     setRawOrigin,
     setRouteCoordinates,
+    isAdminMode,
   } = useStore()
 
   const [isDarkMode, setIsDarkMode] = useState(false)
@@ -370,15 +371,15 @@ export const MapCanvas: React.FC = () => {
 
         {/* Building Footprint (Polygons) */}
         {footprintData.features.length > 0 && (
-          <Source type="geojson" data={footprintData}>
+          <Source id="building-footprint-source" type="geojson" data={footprintData}>
             <Layer {...footprintLayerStyle} />
             <Layer {...footprintLineLayerStyle} />
           </Source>
         )}
 
-        {/* Corridor Path Mesh (LineStrings) */}
-        {pathsData.features.length > 0 && (
-          <Source type="geojson" data={pathsData}>
+        {/* Corridor Path Mesh (LineStrings) - Only visible in Admin Mode */}
+        {isAdminMode && pathsData.features.length > 0 && (
+          <Source id="corridor-paths-source" type="geojson" data={pathsData}>
             <Layer {...pathsBorderLayerStyle} />
             <Layer {...pathsLayerStyle} />
           </Source>
@@ -386,14 +387,14 @@ export const MapCanvas: React.FC = () => {
 
         {/* Dotted snap line from raw origin to snapped point */}
         {snapLineData && (
-          <Source type="geojson" data={snapLineData}>
+          <Source id="snap-line-source" type="geojson" data={snapLineData}>
             <Layer {...snapLineLayerStyle} />
           </Source>
         )}
 
         {/* Active calculated route */}
         {routeData && (
-          <Source type="geojson" data={routeData}>
+          <Source id="active-route-source" type="geojson" data={routeData}>
             <Layer {...routeBorderLayerStyle} />
             <Layer {...routeLayerStyle} />
           </Source>
