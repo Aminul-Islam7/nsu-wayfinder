@@ -17,6 +17,8 @@
 - Data stored as GeoJSON in a `jsonb` column in `map_features` table
 - Row Level Security (RLS): SELECT for everyone, INSERT/UPDATE/DELETE for admins
 
-## Deployment
+## Deployment & Source Control
+- Source Control: Hosted on GitHub at [Aminul-Islam7/nsu-wayfinder](https://github.com/Aminul-Islam7/nsu-wayfinder.git)
 - Vercel (Frontend)
 - Supabase Cloud (Backend)
+

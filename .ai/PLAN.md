@@ -4,7 +4,8 @@
   - [x] Scaffold project (Vite + React + TypeScript + Tailwind + shadcn/ui).
   - [x] Setup Supabase schema (`map_features`, RLS, `get_feature_collection()` RPC).
   - [x] Seed map data from cleaned GeoJSON.
-  - [ ] Basic read-only map rendering live data.
+  - [x] Basic read-only map rendering live data setup.
+  - [x] Initialized Git repository, configured remote, and pushed initial commit to GitHub.
 
 - [ ] **Phase 2: Core Navigation**
   - QR param parsing + snapping.
