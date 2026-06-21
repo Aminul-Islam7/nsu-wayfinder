@@ -278,23 +278,9 @@ export const MapCanvas: React.FC = () => {
       'line-join': 'round',
     },
     paint: {
-      'line-color': isDarkMode ? '#6366f1' : '#4f46e5',
-      'line-width': 4,
-      'line-opacity': 0.7,
-    },
-  }
-
-  const pathsBorderLayerStyle: any = {
-    id: 'corridor-paths-border',
-    type: 'line',
-    layout: {
-      'line-cap': 'round',
-      'line-join': 'round',
-    },
-    paint: {
-      'line-color': isDarkMode ? '#1e1b4b' : '#e0e7ff',
-      'line-width': 6,
-      'line-opacity': 0.4,
+      'line-color': isDarkMode ? '#475569' : '#cbd5e1', // thin grey lines
+      'line-width': 1.5,
+      'line-opacity': 0.65,
     },
   }
 
@@ -416,10 +402,9 @@ export const MapCanvas: React.FC = () => {
           </Source>
         )}
 
-        {/* Corridor Path Mesh (LineStrings) - Only visible in Admin Mode */}
-        {isAdminMode && pathsData.features.length > 0 && (
+        {/* Corridor Path Mesh (LineStrings) */}
+        {pathsData.features.length > 0 && (
           <Source id="corridor-paths-source" type="geojson" data={pathsData}>
-            <Layer {...pathsBorderLayerStyle} />
             <Layer {...pathsLayerStyle} />
           </Source>
         )}
