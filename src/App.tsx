@@ -49,10 +49,7 @@ function glassStyle(dark: boolean, extra?: React.CSSProperties): React.CSSProper
   }
 }
 
-function pillHoverBg(dark: boolean, active: boolean) {
-  if (active) return '#2563eb'
-  return dark ? 'rgba(255,255,255,0.07)' : 'rgba(0,0,0,0.04)'
-}
+
 
 // ─── Small reusable icon-box ──────────────────────────────────────
 function IconBox({ bg, glow, children }: { bg: string; glow: string; children: React.ReactNode }) {
@@ -68,17 +65,7 @@ function IconBox({ bg, glow, children }: { bg: string; glow: string; children: R
   )
 }
 
-// ─── Divider ──────────────────────────────────────────────────────
-function Divider({ dark, vertical }: { dark: boolean; vertical?: boolean }) {
-  return (
-    <div style={{
-      [vertical ? 'width' : 'height']: 1,
-      [vertical ? 'height' : 'width']: vertical ? 24 : '100%',
-      background: dark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.07)',
-      flexShrink: 0,
-    }} />
-  )
-}
+
 
 // ═══════════════════════════════════════════════════════════════════
 export default function App() {

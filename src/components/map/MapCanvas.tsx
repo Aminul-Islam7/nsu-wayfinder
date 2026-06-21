@@ -298,23 +298,6 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({ isDark: isDarkMode, pickin
     }
   }, [route.routeCoordinates, activeLevel])
 
-  // Detect floor level transition points
-  const floorTransition = useMemo(() => {
-    if (!route.routeCoordinates || route.routeCoordinates.length === 0) return null
-
-    for (let i = 0; i < route.routeCoordinates.length - 1; i++) {
-      const curr = route.routeCoordinates[i]
-      const next = route.routeCoordinates[i + 1]
-      if (curr[2] !== next[2]) {
-        return {
-          coords: [curr[0], curr[1]] as [number, number],
-          fromLevel: curr[2] as Level,
-          toLevel: next[2] as Level
-        }
-      }
-    }
-    return null
-  }, [route.routeCoordinates])
 
   // MapLibre Layer Styles for Building Outlines
   const footprintLayerStyle: any = {
