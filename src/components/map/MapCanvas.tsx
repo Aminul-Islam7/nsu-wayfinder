@@ -203,6 +203,33 @@ export const MapCanvas: React.FC = () => {
     }
   }, [route.rawOrigin, route.origin])
 
+  // Find destination coordinate
+  const destCoords = useMemo(() => {
+    if (!route.destination || features.length === 0) return null
+    const destFeature = features.find((f) => f.properties?._feature_id === route.destination)
+    if (!destFeature || !destFeature.geometry || destFeature.geometry.type !== 'Point') return null
+    return destFeature.geometry.coordinates as [number, number]
+  }, [features, route.destination])
+
+  // Create LineString geometry for the destination snap line (walking path at the end)
+  const destSnapLineData = useMemo(() => {
+    if (!destCoords || !route.routeCoordinates || route.routeCoordinates.length === 0) return null
+    const lastRouteCoord = route.routeCoordinates[route.routeCoordinates.length - 1]
+    return {
+      type: 'FeatureCollection' as const,
+      features: [
+        {
+          type: 'Feature' as const,
+          geometry: {
+            type: 'LineString' as const,
+            coordinates: [lastRouteCoord, destCoords],
+          },
+          properties: {},
+        },
+      ],
+    }
+  }, [destCoords, route.routeCoordinates])
+
   // Create LineString geometry for the active calculated route
   const routeData = useMemo(() => {
     if (!route.routeCoordinates || route.routeCoordinates.length === 0) return null
@@ -279,6 +306,17 @@ export const MapCanvas: React.FC = () => {
       'line-width': 2,
       'line-dasharray': [2, 2], // dotted
       'line-opacity': 0.8,
+    },
+  }
+
+  const destSnapLineLayerStyle: any = {
+    id: 'dest-snap-line',
+    type: 'line',
+    paint: {
+      'line-color': '#10b981', // emerald color matching route
+      'line-width': 4,
+      'line-dasharray': [2, 2], // dashed walking line
+      'line-opacity': 0.85,
     },
   }
 
@@ -398,6 +436,13 @@ export const MapCanvas: React.FC = () => {
           <Source id="active-route-source" type="geojson" data={routeData}>
             <Layer {...routeBorderLayerStyle} />
             <Layer {...routeLayerStyle} />
+          </Source>
+        )}
+
+        {/* Dotted snap line from end of route to destination POI */}
+        {destSnapLineData && (
+          <Source id="dest-snap-line-source" type="geojson" data={destSnapLineData}>
+            <Layer {...destSnapLineLayerStyle} />
           </Source>
         )}
 

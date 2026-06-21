@@ -57,6 +57,7 @@ Transit nodes (lifts/staircases) at the same physical XY on L1 and L2 (e.g. `nac
 - Corridor path meshes are hidden by default and only visible when `isAdminMode` is enabled.
 - Snap lines are rendered as dotted rose lines connecting the raw visitor location (Scan Location) to the snapped path position (You Are Here).
 - The active calculated route is rendered on top of other features as an emerald-green line with a white border.
+- A destination snap line is rendered as a dashed emerald-green line connecting the end of the calculated route on the path network directly to the destination POI marker (representing the walking path from the corridor to the room).
 
 ### 2026-06-21 — Snapping Segment-splitting Intersection Bug (Fixed)
 - **Problem**: Snapped origin and destination nodes were being created in the graph but remained completely isolated (size 1 components with 0 neighbors). Dijkstra would silently return empty routes. This was because `getOrCreateNodeKey(snapCoords)` was called before checking `g.hasNode(snapKey)`. Since `getOrCreateNodeKey` immediately adds the node to the graph when it doesn't exist, `g.hasNode(snapKey)` always returned `true` immediately after, causing the snapping function to return early and bypass the segment-splitting/edge-adding logic entirely.
