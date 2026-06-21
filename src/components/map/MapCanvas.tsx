@@ -275,6 +275,48 @@ export const MapCanvas: React.FC = () => {
     }
   }, [route.routeCoordinates, activeLevel])
 
+  // Create LineString geometry for inactive floor route segments (overlaid dashed violet)
+  const inactiveRouteData = useMemo(() => {
+    if (!route.routeCoordinates || route.routeCoordinates.length === 0) return null
+
+    // Collect consecutive segments that are NOT on the activeLevel
+    // Build one or more LineString features per contiguous inactive segment
+    const inactiveFeatures: any[] = []
+    let currentSegment: [number, number][] = []
+
+    for (let i = 0; i < route.routeCoordinates.length; i++) {
+      const coord = route.routeCoordinates[i]
+      const isInactive = coord[2] !== activeLevel
+      if (isInactive) {
+        currentSegment.push([coord[0], coord[1]])
+      } else {
+        if (currentSegment.length >= 2) {
+          inactiveFeatures.push({
+            type: 'Feature' as const,
+            geometry: { type: 'LineString' as const, coordinates: currentSegment },
+            properties: {},
+          })
+        }
+        currentSegment = []
+      }
+    }
+    // flush last segment
+    if (currentSegment.length >= 2) {
+      inactiveFeatures.push({
+        type: 'Feature' as const,
+        geometry: { type: 'LineString' as const, coordinates: currentSegment },
+        properties: {},
+      })
+    }
+
+    if (inactiveFeatures.length === 0) return null
+
+    return {
+      type: 'FeatureCollection' as const,
+      features: inactiveFeatures,
+    }
+  }, [route.routeCoordinates, activeLevel])
+
   // Detect floor level transition points
   const floorTransition = useMemo(() => {
     if (!route.routeCoordinates || route.routeCoordinates.length === 0) return null
