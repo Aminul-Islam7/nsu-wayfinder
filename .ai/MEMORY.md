@@ -40,3 +40,26 @@ Transit nodes (lifts/staircases) at the same physical XY on L1 and L2 (e.g. `nac
 - RLS: SELECT open to `public`; INSERT/UPDATE/DELETE gated on `admin_allowlist` table
 - RPC: `get_feature_collection(p_level integer DEFAULT NULL)` → returns GeoJSON FeatureCollection
 - Service key needed for seed script (bypasses RLS); anon key for frontend reads
+
+## Single Floor Routing Implementation
+
+### Snapping & Dijkstra Integration
+- **Snapping**: Snaps coordinates from URL params (`lat`, `lng`) to the nearest path on the active floor level using Turf.js `nearestPointOnLine`. Snapped coordinates are stored as `route.origin`.
+- **Graph construction**: In `lib/routing.ts`, we construct a graphology graph dynamically using path features on the active level.
+- **Shortest Path**: We execute bidirectional Dijkstra pathfinding using `graphology-shortest-path/dijkstra` from `route.origin` to the selected destination POI.
+
+### Graphology Directed vs. Undirected Edges Bug (Fixed)
+- **Problem**: When constructing the graph, we used `g.addEdge()` which creates a directed edge. Since corridor paths are bidirectional, pathfinding would fail (returning an empty route) if the target direction required traversing an edge backwards relative to its digitized orientation.
+- **Fix**: Replaced `addEdge`, `hasEdge`, and `dropEdge` with `addUndirectedEdge`, `hasUndirectedEdge`, and `dropUndirectedEdge` respectively. The graph is now correctly built as an undirected network, allowing Dijkstra to navigate in either direction.
+
+### Visual Map Stack
+- Building footprints are drawn under paths and markers.
+- Corridor path meshes are hidden by default and only visible when `isAdminMode` is enabled.
+- Snap lines are rendered as dotted rose lines connecting the raw visitor location (Scan Location) to the snapped path position (You Are Here).
+- The active calculated route is rendered on top of other features as an emerald-green line with a white border.
+
+### 2026-06-21 — Snapping Segment-splitting Intersection Bug (Fixed)
+- **Problem**: Snapped origin and destination nodes were being created in the graph but remained completely isolated (size 1 components with 0 neighbors). Dijkstra would silently return empty routes. This was because `getOrCreateNodeKey(snapCoords)` was called before checking `g.hasNode(snapKey)`. Since `getOrCreateNodeKey` immediately adds the node to the graph when it doesn't exist, `g.hasNode(snapKey)` always returned `true` immediately after, causing the snapping function to return early and bypass the segment-splitting/edge-adding logic entirely.
+- **Fix**: Replaced the direct `getOrCreateNodeKey` check with a manual distance check against `nodeCoords` first. If no existing node is within 10 cm, we generate `snapKey` and proceed to split the segment and add the edges. Snapped nodes now correctly connect to the path network, and routing works flawlessly.
+
+

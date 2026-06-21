@@ -127,6 +127,7 @@ export const MapCanvas: React.FC = () => {
 
   // Trigger pathfinding when origin and destination are selected
   useEffect(() => {
+    console.log('MapCanvas Triggering pathfinding hook. isLoading:', isLoading, 'features:', features.length, 'origin:', route.origin, 'destination:', route.destination);
     if (isLoading || features.length === 0 || !route.origin || !route.destination) {
       if (route.routeCoordinates.length > 0) {
         setRouteCoordinates([])

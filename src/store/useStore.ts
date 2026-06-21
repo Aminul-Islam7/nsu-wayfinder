@@ -94,3 +94,7 @@ export const useStore = create<AppStore>((set) => ({
   setAdminMode: (enabled) => set({ isAdminMode: enabled }),
 }))
 
+if (typeof window !== 'undefined') {
+  (window as any).useStore = useStore
+}
+
