@@ -32,8 +32,7 @@ function App() {
     return () => document.removeEventListener('mousedown', handleClickOutside)
   }, [])
 
-  const levelFeatures = features.filter((f) => f.properties?.level === activeLevel)
-  const pois = levelFeatures.filter((f) => f.properties?.type === 'poi')
+  const pois = features.filter((f) => f.properties?.type === 'poi')
   const sortedPois = [...pois].sort((a, b) => (a.properties?.name || '').localeCompare(b.properties?.name || ''))
 
   const filteredPois = sortedPois.filter(poi =>

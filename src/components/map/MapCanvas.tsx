@@ -115,7 +115,7 @@ export const MapCanvas: React.FC = () => {
             }
 
             if (snappedCoord) {
-              setOrigin(snappedCoord)
+              setOrigin(snappedCoord, rawLevel)
             }
           } catch (e) {
             console.error('Turf snapping error:', e)
@@ -140,14 +140,17 @@ export const MapCanvas: React.FC = () => {
     if (!destFeature || !destFeature.geometry || destFeature.geometry.type !== 'Point') return
 
     const destCoords = destFeature.geometry.coordinates as [number, number]
+    const destLevel = destFeature.properties?.level as number
+    const originLevel = route.originLevel || activeLevel
 
-    const pathCoords = computeShortestPath(features, activeLevel, route.origin, destCoords)
+    const pathCoords = computeShortestPath(features, originLevel, route.origin, destLevel, destCoords)
     setRouteCoordinates(pathCoords)
   }, [
     features,
     isLoading,
     activeLevel,
     route.origin,
+    route.originLevel,
     route.destination,
     setRouteCoordinates,
   ])
@@ -174,22 +177,33 @@ export const MapCanvas: React.FC = () => {
     }
   }, [features, activeLevel])
 
-  // Filter POIs and Transits for markers
+  // Filter POIs and Transits for markers (include cross-floor destination)
   const markersData = useMemo(() => {
-    return features.filter(
-      (f) =>
-        f.geometry &&
-        f.geometry.type === 'Point' &&
-        (f.properties?.type === 'poi' || f.properties?.type === 'transit') &&
-        f.properties?.level === activeLevel
-    )
-  }, [features, activeLevel])
+    return features.filter((f) => {
+      if (!f.geometry || f.geometry.type !== 'Point') return false
+      const isTransitOrPoi = f.properties?.type === 'poi' || f.properties?.type === 'transit'
+      if (!isTransitOrPoi) return false
+
+      if (f.properties?.level === activeLevel) return true
+      if (route.destination && f.properties?._feature_id === route.destination) return true
+
+      return false
+    })
+  }, [features, activeLevel, route.destination])
 
 
 
   // Create LineString geometry linking raw URL entry to snapped corridor path point
   const startSnapLineData = useMemo(() => {
-    if (!route.rawOrigin || !route.origin || !route.destination || route.routeCoordinates.length === 0) return null
+    if (
+      !route.rawOrigin ||
+      !route.origin ||
+      !route.destination ||
+      route.routeCoordinates.length === 0 ||
+      route.originLevel !== activeLevel
+    ) {
+      return null
+    }
     return {
       type: 'FeatureCollection' as const,
       features: [
@@ -203,19 +217,22 @@ export const MapCanvas: React.FC = () => {
         },
       ],
     }
-  }, [route.rawOrigin, route.origin, route.destination, route.routeCoordinates])
+  }, [route.rawOrigin, route.origin, route.destination, route.routeCoordinates, route.originLevel, activeLevel])
 
-  // Find destination coordinate
-  const destCoords = useMemo(() => {
+  // Find destination level and coordinate
+  const destInfo = useMemo(() => {
     if (!route.destination || features.length === 0) return null
     const destFeature = features.find((f) => f.properties?._feature_id === route.destination)
     if (!destFeature || !destFeature.geometry || destFeature.geometry.type !== 'Point') return null
-    return destFeature.geometry.coordinates as [number, number]
+    return {
+      coords: destFeature.geometry.coordinates as [number, number],
+      level: destFeature.properties?.level as number
+    }
   }, [features, route.destination])
 
   // Create LineString geometry for the destination snap line (walking path at the end)
   const destSnapLineData = useMemo(() => {
-    if (!destCoords || !route.routeCoordinates || route.routeCoordinates.length === 0) return null
+    if (!destInfo || !route.routeCoordinates || route.routeCoordinates.length === 0 || destInfo.level !== activeLevel) return null
     const lastRouteCoord = route.routeCoordinates[route.routeCoordinates.length - 1]
     return {
       type: 'FeatureCollection' as const,
@@ -224,17 +241,25 @@ export const MapCanvas: React.FC = () => {
           type: 'Feature' as const,
           geometry: {
             type: 'LineString' as const,
-            coordinates: [lastRouteCoord, destCoords],
+            coordinates: [[lastRouteCoord[0], lastRouteCoord[1]], destInfo.coords],
           },
           properties: {},
         },
       ],
     }
-  }, [destCoords, route.routeCoordinates])
+  }, [destInfo, route.routeCoordinates, activeLevel])
 
-  // Create LineString geometry for the active calculated route
+  // Create LineString geometry for the active calculated route (filtered for active floor)
   const routeData = useMemo(() => {
     if (!route.routeCoordinates || route.routeCoordinates.length === 0) return null
+    
+    // Filter coordinates matching activeLevel
+    const filteredCoords = route.routeCoordinates
+      .filter((coord) => coord[2] === activeLevel)
+      .map((coord) => [coord[0], coord[1]] as [number, number])
+
+    if (filteredCoords.length < 2) return null
+
     return {
       type: 'FeatureCollection' as const,
       features: [
@@ -242,12 +267,30 @@ export const MapCanvas: React.FC = () => {
           type: 'Feature' as const,
           geometry: {
             type: 'LineString' as const,
-            coordinates: route.routeCoordinates,
+            coordinates: filteredCoords,
           },
           properties: {},
         },
       ],
     }
+  }, [route.routeCoordinates, activeLevel])
+
+  // Detect floor level transition points
+  const floorTransition = useMemo(() => {
+    if (!route.routeCoordinates || route.routeCoordinates.length === 0) return null
+
+    for (let i = 0; i < route.routeCoordinates.length - 1; i++) {
+      const curr = route.routeCoordinates[i]
+      const next = route.routeCoordinates[i + 1]
+      if (curr[2] !== next[2]) {
+        return {
+          coords: [curr[0], curr[1]] as [number, number],
+          fromLevel: curr[2] as Level,
+          toLevel: next[2] as Level
+        }
+      }
+    }
+    return null
   }, [route.routeCoordinates])
 
   // MapLibre Layer Styles for Building Outlines
@@ -289,24 +332,50 @@ export const MapCanvas: React.FC = () => {
 
 
   const startSnapLineLayerStyle: any = {
-    id: 'start-snap-line',
+    id: 'start-snap-line-active',
     type: 'line',
+    filter: ['!=', ['get', 'isInactive'], true],
     paint: {
-      'line-color': '#2563eb', // blue color matching "You" marker
+      'line-color': '#2563eb', // blue color matching active You
       'line-width': 3,
-      'line-dasharray': [2, 2], // dashed walking line
+      'line-dasharray': [2, 2],
       'line-opacity': 0.8,
     },
   }
 
-  const destSnapLineLayerStyle: any = {
-    id: 'dest-snap-line',
+  const startSnapLineInactiveLayerStyle: any = {
+    id: 'start-snap-line-inactive',
     type: 'line',
+    filter: ['==', ['get', 'isInactive'], true],
     paint: {
-      'line-color': '#10b981', // emerald color matching route
+      'line-color': '#8b5cf6', // violet for inactive
+      'line-width': 3,
+      'line-dasharray': [3, 3],
+      'line-opacity': 0.65,
+    },
+  }
+
+  const destSnapLineLayerStyle: any = {
+    id: 'dest-snap-line-active',
+    type: 'line',
+    filter: ['!=', ['get', 'isInactive'], true],
+    paint: {
+      'line-color': '#10b981', // emerald color matching active dest
       'line-width': 4,
-      'line-dasharray': [2, 2], // dashed walking line
+      'line-dasharray': [2, 2],
       'line-opacity': 0.85,
+    },
+  }
+
+  const destSnapLineInactiveLayerStyle: any = {
+    id: 'dest-snap-line-inactive',
+    type: 'line',
+    filter: ['==', ['get', 'isInactive'], true],
+    paint: {
+      'line-color': '#8b5cf6', // violet for inactive
+      'line-width': 4,
+      'line-dasharray': [3, 3],
+      'line-opacity': 0.65,
     },
   }
 
@@ -318,23 +387,24 @@ export const MapCanvas: React.FC = () => {
       'line-join': 'round',
     },
     paint: {
-      'line-color': '#10b981', // emerald color for active route
-      'line-width': 6,
-      'line-opacity': 0.9,
+      'line-color': '#2563eb', // blue color for active route
+      'line-width': 5,
+      'line-opacity': 0.95,
     },
   }
 
-  const routeBorderLayerStyle: any = {
-    id: 'active-route-border',
+  const inactiveRouteLayerStyle: any = {
+    id: 'inactive-route',
     type: 'line',
     layout: {
       'line-cap': 'round',
       'line-join': 'round',
     },
     paint: {
-      'line-color': '#ffffff', // white border to make route pop
-      'line-width': 10,
-      'line-opacity': 0.8,
+      'line-color': '#8b5cf6', // violet color for inactive route
+      'line-width': 4,
+      'line-dasharray': [3, 3],
+      'line-opacity': 0.7,
     },
   }
 
@@ -417,14 +487,21 @@ export const MapCanvas: React.FC = () => {
         {startSnapLineData && (
           <Source id="start-snap-line-source" type="geojson" data={startSnapLineData}>
             <Layer {...startSnapLineLayerStyle} />
+            <Layer {...startSnapLineInactiveLayerStyle} />
           </Source>
         )}
 
         {/* Active calculated route */}
         {routeData && (
           <Source id="active-route-source" type="geojson" data={routeData}>
-            <Layer {...routeBorderLayerStyle} />
             <Layer {...routeLayerStyle} />
+          </Source>
+        )}
+
+        {/* Inactive calculated route (overlaid) */}
+        {inactiveRouteData && (
+          <Source id="inactive-route-source" type="geojson" data={inactiveRouteData}>
+            <Layer {...inactiveRouteLayerStyle} />
           </Source>
         )}
 
@@ -432,6 +509,7 @@ export const MapCanvas: React.FC = () => {
         {destSnapLineData && (
           <Source id="dest-snap-line-source" type="geojson" data={destSnapLineData}>
             <Layer {...destSnapLineLayerStyle} />
+            <Layer {...destSnapLineInactiveLayerStyle} />
           </Source>
         )}
 
@@ -443,7 +521,10 @@ export const MapCanvas: React.FC = () => {
             anchor="center"
             style={{ zIndex: 9999 }}
           >
-            <div className="flex flex-col items-center select-none pointer-events-none animate-in fade-in zoom-in duration-300 relative z-[9999]">
+            <div 
+              style={{ opacity: route.originLevel !== activeLevel ? 0.6 : 1 }}
+              className="flex flex-col items-center select-none pointer-events-none animate-in fade-in zoom-in duration-300 relative z-[9999]"
+            >
               <div 
                 style={{
                   color: '#2563eb',
@@ -453,10 +534,12 @@ export const MapCanvas: React.FC = () => {
                 }}
                 className="mb-1 text-[10px] font-black tracking-wider uppercase whitespace-nowrap"
               >
-                You
+                You {route.originLevel !== activeLevel && `(L${route.originLevel})`}
               </div>
               <div className="w-4.5 h-4.5 rounded-full bg-blue-600 border-[2.5px] border-white flex items-center justify-center shadow-lg relative">
-                <span className="absolute w-full h-full rounded-full bg-blue-500/50 animate-ping" />
+                {route.originLevel === activeLevel && (
+                  <span className="absolute w-full h-full rounded-full bg-blue-500/50 animate-ping" />
+                )}
                 <div className="w-1.5 h-1.5 rounded-full bg-white" />
               </div>
             </div>
@@ -466,11 +549,16 @@ export const MapCanvas: React.FC = () => {
         {/* POIs and Transit Nodes (Markers) */}
         {markersData.map((marker) => {
           const [lng, lat] = marker.geometry.coordinates
-          const { type, category, name, transit_type, node_id } = marker.properties || {}
+          const { type, category, name, transit_type, node_id, level } = marker.properties || {}
           const key = node_id || marker.properties?._feature_id || `${lng}-${lat}`
 
           const isTransit = type === 'transit'
           const isClassroom = category === 'classroom'
+          const isInactiveFloor = level !== activeLevel
+
+          const isRouteActive = !!route.destination
+          const isDestination = route.destination && (marker.properties?._feature_id === route.destination || node_id === route.destination)
+          const showIcon = !isRouteActive || isDestination
 
           const labelColor = isTransit ? '#10b981' : isClassroom ? '#6366f1' : '#f43f5e'
           const textShadowStyle = isDarkMode
@@ -479,7 +567,10 @@ export const MapCanvas: React.FC = () => {
 
           return (
             <Marker key={key} longitude={lng} latitude={lat} anchor="bottom">
-              <div className="group flex flex-col items-center cursor-default">
+              <div 
+                style={{ opacity: isInactiveFloor ? 0.6 : 1 }}
+                className="group flex flex-col items-center cursor-default"
+              >
                 {/* Outlined Label without Background */}
                 <div 
                   style={{
@@ -488,31 +579,33 @@ export const MapCanvas: React.FC = () => {
                   }}
                   className="mb-1 text-[9.5px] font-extrabold tracking-wide whitespace-nowrap opacity-85 group-hover:opacity-100 transition-opacity pointer-events-none"
                 >
-                  {name || 'POI'}
+                  {name || 'POI'} {isInactiveFloor && `(L${level})`}
                 </div>
 
                 {/* Marker Pin */}
-                <div
-                  className={`w-6 h-6 rounded-full flex items-center justify-center shadow-md border-2 border-background transition-transform duration-200 group-hover:scale-110 ${
-                    isTransit
-                      ? 'bg-emerald-500 text-white'
-                      : isClassroom
-                      ? 'bg-indigo-500 text-white'
-                      : 'bg-rose-500 text-white'
-                  }`}
-                >
-                  {isTransit ? (
-                    transit_type === 'staircase' ? (
-                      <StairsIcon className="w-3.5 h-3.5" />
+                {showIcon && (
+                  <div
+                    className={`w-6 h-6 rounded-full flex items-center justify-center shadow-md border-2 border-background transition-transform duration-200 group-hover:scale-110 ${
+                      isTransit
+                        ? 'bg-emerald-500 text-white'
+                        : isClassroom
+                        ? 'bg-indigo-500 text-white'
+                        : 'bg-rose-500 text-white'
+                    }`}
+                  >
+                    {isTransit ? (
+                      transit_type === 'staircase' ? (
+                        <StairsIcon className="w-3.5 h-3.5" />
+                      ) : (
+                        <ArrowUpDown className="w-3.5 h-3.5" />
+                      )
+                    ) : isClassroom ? (
+                      <GraduationCap className="w-3.5 h-3.5" />
                     ) : (
-                      <ArrowUpDown className="w-3.5 h-3.5" />
-                    )
-                  ) : isClassroom ? (
-                    <GraduationCap className="w-3.5 h-3.5" />
-                  ) : (
-                    <MapPin className="w-3.5 h-3.5" />
-                  )}
-                </div>
+                      <MapPin className="w-3.5 h-3.5" />
+                    )}
+                  </div>
+                )}
               </div>
             </Marker>
           )
