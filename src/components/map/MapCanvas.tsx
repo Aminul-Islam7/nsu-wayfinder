@@ -185,23 +185,7 @@ export const MapCanvas: React.FC = () => {
     )
   }, [features, activeLevel])
 
-  // Create LineString geometry linking raw URL entry to snapped corridor path point
-  const snapLineData = useMemo(() => {
-    if (!route.rawOrigin || !route.origin) return null
-    return {
-      type: 'FeatureCollection' as const,
-      features: [
-        {
-          type: 'Feature' as const,
-          geometry: {
-            type: 'LineString' as const,
-            coordinates: [route.rawOrigin, route.origin],
-          },
-          properties: {},
-        },
-      ],
-    }
-  }, [route.rawOrigin, route.origin])
+
 
   // Find destination coordinate
   const destCoords = useMemo(() => {
@@ -284,16 +268,7 @@ export const MapCanvas: React.FC = () => {
     },
   }
 
-  const snapLineLayerStyle: any = {
-    id: 'snap-line',
-    type: 'line',
-    paint: {
-      'line-color': isDarkMode ? '#f43f5e' : '#e11d48', // rose color
-      'line-width': 2,
-      'line-dasharray': [2, 2], // dotted
-      'line-opacity': 0.8,
-    },
-  }
+
 
   const destSnapLineLayerStyle: any = {
     id: 'dest-snap-line',
@@ -409,13 +384,6 @@ export const MapCanvas: React.FC = () => {
           </Source>
         )}
 
-        {/* Dotted snap line from raw origin to snapped point */}
-        {snapLineData && (
-          <Source id="snap-line-source" type="geojson" data={snapLineData}>
-            <Layer {...snapLineLayerStyle} />
-          </Source>
-        )}
-
         {/* Active calculated route */}
         {routeData && (
           <Source id="active-route-source" type="geojson" data={routeData}>
@@ -429,21 +397,6 @@ export const MapCanvas: React.FC = () => {
           <Source id="dest-snap-line-source" type="geojson" data={destSnapLineData}>
             <Layer {...destSnapLineLayerStyle} />
           </Source>
-        )}
-
-        {/* Raw Visitor Origin Marker (Scan Location) */}
-        {route.rawOrigin && (
-          <Marker longitude={route.rawOrigin[0]} latitude={route.rawOrigin[1]} anchor="center">
-            <div className="flex flex-col items-center select-none pointer-events-none animate-in fade-in zoom-in duration-300">
-              <div className="mb-1.5 bg-rose-500 text-white text-[9px] font-bold px-1.5 py-0.5 rounded-md shadow-md border border-background whitespace-nowrap">
-                Scan Location
-              </div>
-              <div className="w-4 h-4 rounded-full bg-rose-500 border-2 border-background flex items-center justify-center shadow-lg relative">
-                <span className="absolute w-full h-full rounded-full bg-rose-500/40 animate-ping" />
-                <div className="w-1.5 h-1.5 rounded-full bg-background" />
-              </div>
-            </div>
-          </Marker>
         )}
 
         {/* Snapped Visitor Origin Marker */}
