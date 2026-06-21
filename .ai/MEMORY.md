@@ -55,7 +55,7 @@ Transit nodes (lifts/staircases) at the same physical XY on L1 and L2 (e.g. `nac
 ### Visual Map Stack
 - Building footprints are drawn under paths and markers.
 - Corridor path meshes are hidden by default and only visible when `isAdminMode` is enabled.
-- Snap lines are rendered as dotted rose lines connecting the raw visitor location (Scan Location) to the snapped path position (You Are Here).
+- Snap lines are rendered as dotted blue lines connecting the raw visitor location (You) to the snapped path position. The snap line only renders when routing to a destination is active.
 - The active calculated route is rendered on top of other features as an emerald-green line with a white border.
 - A destination snap line is rendered as a dashed emerald-green line connecting the end of the calculated route on the path network directly to the destination POI marker (representing the walking path from the corridor to the room).
 - Corridor paths are rendered on the map always (no longer restricted to admin mode) as very thin (1.5px) grey lines (`#cbd5e1` in light, `#475569` in dark) with 0.65 opacity to represent walkable corridors without causing visual clutter.
@@ -67,5 +67,9 @@ Transit nodes (lifts/staircases) at the same physical XY on L1 and L2 (e.g. `nac
 ### 2026-06-21 — Snapping Segment-splitting Intersection Bug (Fixed)
 - **Problem**: Snapped origin and destination nodes were being created in the graph but remained completely isolated (size 1 components with 0 neighbors). Dijkstra would silently return empty routes. This was because `getOrCreateNodeKey(snapCoords)` was called before checking `g.hasNode(snapKey)`. Since `getOrCreateNodeKey` immediately adds the node to the graph when it doesn't exist, `g.hasNode(snapKey)` always returned `true` immediately after, causing the snapping function to return early and bypass the segment-splitting/edge-adding logic entirely.
 - **Fix**: Replaced the direct `getOrCreateNodeKey` check with a manual distance check against `nodeCoords` first. If no existing node is within 10 cm, we generate `snapKey` and proceed to split the segment and add the edges. Snapped nodes now correctly connect to the path network, and routing works flawlessly.
+
+### 2026-06-21 — Start Snap Line Conditional Rendering
+- **Problem**: The dashed start snap line was visible on initial mount even when no destination was selected, creating visual clutter.
+- **Fix**: Updated `startSnapLineData` `useMemo` in `MapCanvas.tsx` to return `null` if `route.destination` is not set or `route.routeCoordinates` is empty. The snap line now renders only when active routing is underway.
 
 

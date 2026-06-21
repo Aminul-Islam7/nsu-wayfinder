@@ -7,10 +7,10 @@
   - [x] Basic read-only map rendering live data setup.
   - [x] Initialized Git repository, configured remote, and pushed initial commit to GitHub.
 
-- [/] **Phase 2: Core Navigation**
+- [x] **Phase 2: Core Navigation**
   - [x] QR param parsing + snapping.
   - [x] Graph construction (undirected).
-  - [/] Single-floor pathfinding and route rendering (in testing / debugging rendering issues).
+  - [x] Single-floor pathfinding and route rendering.
 
 - [ ] **Phase 3: Multi-floor**
   - Transit edges, level switching, "Continue to Level X" flow.
