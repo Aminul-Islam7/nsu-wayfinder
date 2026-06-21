@@ -6,6 +6,7 @@ import { useStore } from '../../store/useStore'
 import type { Level } from '../../store/useStore'
 import { GraduationCap, MapPin, ArrowUpDown, Info } from 'lucide-react'
 import { nearestPointOnLine, point } from '@turf/turf'
+import { computeShortestPath } from '../../lib/routing'
 
 // Custom Stairs SVG Icon
 const StairsIcon = ({ className }: { className?: string }) => (
@@ -52,6 +53,7 @@ export const MapCanvas: React.FC = () => {
     route,
     setOrigin,
     setRawOrigin,
+    setRouteCoordinates,
   } = useStore()
 
   const [isDarkMode, setIsDarkMode] = useState(false)
@@ -122,6 +124,32 @@ export const MapCanvas: React.FC = () => {
     }
   }, [features, isLoading, activeLevel, setActiveLevel, setOrigin, setRawOrigin])
 
+  // Trigger pathfinding when origin and destination are selected
+  useEffect(() => {
+    if (isLoading || features.length === 0 || !route.origin || !route.destination) {
+      if (route.routeCoordinates.length > 0) {
+        setRouteCoordinates([])
+      }
+      return
+    }
+
+    // Find destination feature
+    const destFeature = features.find((f) => f.properties?._feature_id === route.destination)
+    if (!destFeature || !destFeature.geometry || destFeature.geometry.type !== 'Point') return
+
+    const destCoords = destFeature.geometry.coordinates as [number, number]
+
+    const pathCoords = computeShortestPath(features, activeLevel, route.origin, destCoords)
+    setRouteCoordinates(pathCoords)
+  }, [
+    features,
+    isLoading,
+    activeLevel,
+    route.origin,
+    route.destination,
+    setRouteCoordinates,
+  ])
+
   // Filter features for the building footprint
   const footprintData = useMemo(() => {
     const filtered = features.filter(
@@ -172,6 +200,24 @@ export const MapCanvas: React.FC = () => {
       ],
     }
   }, [route.rawOrigin, route.origin])
+
+  // Create LineString geometry for the active calculated route
+  const routeData = useMemo(() => {
+    if (!route.routeCoordinates || route.routeCoordinates.length === 0) return null
+    return {
+      type: 'FeatureCollection' as const,
+      features: [
+        {
+          type: 'Feature' as const,
+          geometry: {
+            type: 'LineString' as const,
+            coordinates: route.routeCoordinates,
+          },
+          properties: {},
+        },
+      ],
+    }
+  }, [route.routeCoordinates])
 
   // MapLibre Layer Styles for Building Outlines
   const footprintLayerStyle: any = {
@@ -230,6 +276,34 @@ export const MapCanvas: React.FC = () => {
       'line-color': isDarkMode ? '#f43f5e' : '#e11d48', // rose color
       'line-width': 2,
       'line-dasharray': [2, 2], // dotted
+      'line-opacity': 0.8,
+    },
+  }
+
+  const routeLayerStyle: any = {
+    id: 'active-route',
+    type: 'line',
+    layout: {
+      'line-cap': 'round',
+      'line-join': 'round',
+    },
+    paint: {
+      'line-color': '#10b981', // emerald color for active route
+      'line-width': 6,
+      'line-opacity': 0.9,
+    },
+  }
+
+  const routeBorderLayerStyle: any = {
+    id: 'active-route-border',
+    type: 'line',
+    layout: {
+      'line-cap': 'round',
+      'line-join': 'round',
+    },
+    paint: {
+      'line-color': '#ffffff', // white border to make route pop
+      'line-width': 10,
       'line-opacity': 0.8,
     },
   }
@@ -314,6 +388,14 @@ export const MapCanvas: React.FC = () => {
         {snapLineData && (
           <Source type="geojson" data={snapLineData}>
             <Layer {...snapLineLayerStyle} />
+          </Source>
+        )}
+
+        {/* Active calculated route */}
+        {routeData && (
+          <Source type="geojson" data={routeData}>
+            <Layer {...routeBorderLayerStyle} />
+            <Layer {...routeLayerStyle} />
           </Source>
         )}
 

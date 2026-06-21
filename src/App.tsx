@@ -19,13 +19,16 @@ const StairsIcon = ({ className }: { className?: string }) => (
 
 
 function App() {
-  const { activeLevel, features, isLoading, error } = useStore()
+  const { activeLevel, features, isLoading, error, route, setDestination, clearRoute } = useStore()
 
   // Calculate statistics for the active floor
   const levelFeatures = features.filter((f) => f.properties?.level === activeLevel)
   const poiCount = levelFeatures.filter((f) => f.properties?.type === 'poi').length
   const pathCount = levelFeatures.filter((f) => f.properties?.type === 'path').length
   const transitCount = levelFeatures.filter((f) => f.properties?.type === 'transit').length
+
+  const pois = levelFeatures.filter((f) => f.properties?.type === 'poi')
+  const sortedPois = [...pois].sort((a, b) => (a.properties?.name || '').localeCompare(b.properties?.name || ''))
 
   return (
     <div className="relative w-screen h-screen overflow-hidden bg-background text-foreground select-none">
@@ -75,6 +78,35 @@ function App() {
               </>
             )}
           </div>
+        </div>
+
+        {/* Destination Picker */}
+        <div className="flex flex-col gap-2.5">
+          <label htmlFor="destination-select" className="text-xs font-bold text-muted-foreground uppercase tracking-wider">
+            Choose Destination
+          </label>
+          <select
+            id="destination-select"
+            value={route.destination || ''}
+            onChange={(e) => setDestination(e.target.value || null)}
+            className="w-full bg-card border border-border/85 rounded-xl px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/50 transition cursor-pointer"
+          >
+            <option value="">-- Select Room / POI --</option>
+            {sortedPois.map((poi) => (
+              <option key={poi.properties._feature_id} value={poi.properties._feature_id}>
+                {poi.properties.name} ({poi.properties.building})
+              </option>
+            ))}
+          </select>
+
+          {route.destination && (
+            <button
+              onClick={() => clearRoute()}
+              className="w-full py-2 bg-secondary text-secondary-foreground font-semibold rounded-xl hover:bg-secondary/80 transition text-xs"
+            >
+              Clear Route
+            </button>
+          )}
         </div>
 
         {/* Floor Statistics Panel */}
