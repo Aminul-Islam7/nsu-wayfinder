@@ -411,7 +411,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
     )
   }
 
-  const pinCursorUrl = `url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='32' height='32' viewBox='0 0 24 24' fill='%23f43f5e' stroke='%23ffffff' stroke-width='2' stroke-linejoin='round' stroke-linecap='round'><path d='M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z'/><circle cx='12' cy='10' r='3' fill='%23ffffff'/></svg>") 16 32, crosshair`
+  const pinCursorUrl = `url("data:image/svg+xml;base64,PHN2ZyB4bWxucz0naHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmcnIHdpZHRoPSczMicgaGVpZ2h0PSczMicgdmlld0JveD0nMCAwIDI0IDI0JyBmaWxsPScjZjQzZjVlJyBzdHJva2U9JyNmZmZmZmYnIHN0cm9rZS13aWR0aD0nMicgc3Ryb2tlLWxpbmVqb2luPSdyb3VuZCcgc3Ryb2tlLWxpbmVjYXA9J3JvdW5kJz48cGF0aCBkPSJNMjAgMTBjMCA2LTggMTItOCAxMnMtOC02LTgtMTJhOCA4IDAgMCAxIDE2IDBaIi8+PGNpcmNsZSBjeD0nMTInIGN5PScxMCcgcj0nMycgZmlsbD0nI2ZmZmZmZicvPjwvc3ZnPg==") 16 32, crosshair`
 
   return (
     <div

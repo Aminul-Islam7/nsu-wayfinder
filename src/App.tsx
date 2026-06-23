@@ -208,9 +208,7 @@ export default function App() {
     if (f) setDestQuery(f.properties?.name || '')
   }, [route.destination, features])
 
-  useEffect(() => {
-    if (!route.rawOrigin && !route.origin) setOriginQuery('')
-  }, [route.rawOrigin, route.origin])
+  // (originQuery clearing moved to the clear button onClick explicitly to avoid side-effects)
 
   // ── Click-outside close ──────────────────────────────────────────
   useEffect(() => {
@@ -297,17 +295,18 @@ export default function App() {
     if (isLoading || features.length === 0 || !urlLoadedRef.current) return
     const params = new URLSearchParams(window.location.search)
 
-    if (route.rawOrigin) {
+    const startCoords = route.rawOrigin || route.origin
+    if (startCoords) {
       const matchedPoi = features.find(
         f => f.geometry?.type === 'Point' &&
-        f.geometry.coordinates[0] === route.rawOrigin![0] &&
-        f.geometry.coordinates[1] === route.rawOrigin![1] &&
+        f.geometry.coordinates[0] === startCoords[0] &&
+        f.geometry.coordinates[1] === startCoords[1] &&
         f.properties?.level === route.originLevel
       )
       if (matchedPoi) {
         params.set('start', matchedPoi.properties?._feature_id)
       } else {
-        params.set('start', `coord:${route.rawOrigin[0]},${route.rawOrigin[1]},${route.originLevel || activeLevel}`)
+        params.set('start', `coord:${startCoords[0]},${startCoords[1]},${route.originLevel || activeLevel}`)
       }
       params.delete('lat')
       params.delete('lng')
@@ -367,7 +366,7 @@ export default function App() {
           closestPoi = poi
         }
       }
-      if (closestPoi && minDistance < 2.5) {
+      if (closestPoi && minDistance < 5) {
         featureId = closestPoi.properties?._feature_id || closestPoi.properties?.node_id
         name = closestPoi.properties?.name || 'POI'
         lng = closestPoi.geometry.coordinates[0]
