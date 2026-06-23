@@ -133,6 +133,10 @@ Transit nodes (lifts/staircases) at the same physical XY on L1 and L2 (e.g. `nac
 
 **Fix**: Added a coordinates comparison check using `useStore.getState().route.routeCoordinates` before calling `setRouteCoordinates`. If the newly calculated coordinates are identical to the current ones, the store update is skipped, preserving the array reference and preventing the animation from replaying.
 
+### 2026-06-24 — Active Level URL Synchronization
 
+**Problem**: The selected floor level (activeLevel) was not persisted in the URL query parameters, so refreshes or shared links reverted the map view to the default floor.
 
-
+**Fix**:
+1. **Load State**: Modified initial load `useEffect` in `App.tsx` to parse `level` query parameter and call `setActiveLevel(lvl)` if valid (1 or 2).
+2. **Store to URL Sync**: Modified state-to-URL sync `useEffect` in `App.tsx` to always append `level` query parameter and stopped deleting it on start selection. Persists active level seamlessly alongside route selections.
