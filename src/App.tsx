@@ -473,6 +473,88 @@ export default function App() {
     setOriginOpen(false); setOriginIdx(-1)
   }
 
+  // ── Swap / Flip Start and Destination ────────────────────────────
+  const handleFlip = () => {
+    const currentRawOrigin = route.rawOrigin
+    const currentOrigin = route.origin
+    const currentOriginLevel = route.originLevel ?? activeLevel
+    const currentOriginQuery = originQuery
+
+    const currentDestination = route.destination
+    const currentDestQuery = destQuery
+
+    let newRawOrigin: [number, number] | null = null
+    let newOrigin: [number, number] | null = null
+    let newOriginLevel: Level = activeLevel
+    let newOriginQuery = ''
+
+    if (currentDestination) {
+      if (currentDestination.startsWith('coord:')) {
+        const parts = currentDestination.replace('coord:', '').split(',')
+        const lng = parseFloat(parts[0])
+        const lat = parseFloat(parts[1])
+        const lvl = parseInt(parts[2], 10) as Level
+        newRawOrigin = [lng, lat]
+        newOrigin = [lng, lat]
+        newOriginLevel = lvl
+        newOriginQuery = currentDestQuery || `${lat.toFixed(5)}, ${lng.toFixed(5)}`
+      } else {
+        const poi = features.find(f => f.properties?._feature_id === currentDestination || f.properties?.node_id === currentDestination)
+        if (poi && poi.geometry?.coordinates) {
+          const [lng, lat] = poi.geometry.coordinates
+          const lvl = (poi.properties?.level || activeLevel) as Level
+          newRawOrigin = [lng, lat]
+          newOrigin = [lng, lat]
+          newOriginLevel = lvl
+          newOriginQuery = poi.properties?.name || ''
+        }
+      }
+    }
+
+    let newDestination: string | null = null
+    let newDestQuery = ''
+
+    if (currentRawOrigin || currentOrigin) {
+      const coords = currentRawOrigin || currentOrigin
+      if (coords) {
+        const matchedPoi = features.find(
+          f => f.geometry?.type === 'Point' &&
+          f.geometry.coordinates[0] === coords[0] &&
+          f.geometry.coordinates[1] === coords[1] &&
+          f.properties?.level === currentOriginLevel
+        )
+        if (matchedPoi) {
+          newDestination = matchedPoi.properties?._feature_id || matchedPoi.properties?.node_id || null
+          newDestQuery = matchedPoi.properties?.name || ''
+        } else {
+          newDestination = `coord:${coords[0]},${coords[1]},${currentOriginLevel}`
+          newDestQuery = currentOriginQuery || `${coords[1].toFixed(5)}, ${coords[0].toFixed(5)}`
+        }
+      }
+    }
+
+    setRawOrigin(newRawOrigin)
+    setOrigin(newOrigin, newOriginLevel)
+    setOriginQuery(newOriginQuery)
+
+    setDestination(newDestination)
+    setDestQuery(newDestQuery)
+
+    if (newDestination) {
+      if (newDestination.startsWith('coord:')) {
+        const parts = newDestination.replace('coord:', '').split(',')
+        setActiveLevel(parseInt(parts[2], 10) as Level)
+      } else {
+        const poi = features.find(f => f.properties?._feature_id === newDestination || f.properties?.node_id === newDestination)
+        if (poi) {
+          setActiveLevel((poi.properties?.level || activeLevel) as Level)
+        }
+      }
+    } else if (newOriginLevel) {
+      setActiveLevel(newOriginLevel)
+    }
+  }
+
   // ── Dropdown item renderer ───────────────────────────────────────
   const DropItem = ({
     name, sub: subtitle, type, category, transitType,
@@ -694,13 +776,34 @@ export default function App() {
             )}
           </div>
 
-          {/* Connector dots */}
-          <div style={{ display: 'flex', alignItems: 'center', padding: '4px 28px' }}>
+          {/* Connector dots + Flip Button */}
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '2px 28px 2px 20px' }}>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
               {[0, 1, 2].map(i => (
                 <div key={i} style={{ width: 3, height: 3, borderRadius: '50%', background: isDark ? 'rgba(255,255,255,0.18)' : 'rgba(0,0,0,0.14)' }} />
               ))}
             </div>
+            <button
+              title="Swap start and destination"
+              onClick={handleFlip}
+              style={{
+                background: hov,
+                border: 'none',
+                cursor: 'pointer',
+                borderRadius: '50%',
+                width: 24,
+                height: 24,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                color: sub,
+                transition: 'all 0.15s ease',
+              }}
+              onMouseEnter={(e) => { e.currentTarget.style.color = text; e.currentTarget.style.transform = 'scale(1.1)'; }}
+              onMouseLeave={(e) => { e.currentTarget.style.color = sub; e.currentTarget.style.transform = 'scale(1)'; }}
+            >
+              <ArrowUpDown size={13} />
+            </button>
           </div>
 
           {/* ── Destination input row ─────────────────────────────── */}
