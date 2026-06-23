@@ -249,53 +249,71 @@ function runDijkstra(g: Graph, srcKey: string, dstKey: string, level: number): [
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
-// Find the nearest transit node (lift/staircase access point) on a given level.
-// NOTE: The GeoJSON data only contains transit_type === 'lift' entries.
-// Design decision: assume every lift location also has a nearby staircase.
-// So we route to the nearest transit node regardless of transit_type.
+// Get all staircase transit pairs that cross from `originLevel` to `destLevel`.
+// Each entry is: { originCoords, destCoords } using the connects_to field for
+// exact pairing (no proximity heuristic — connects_to is authoritative).
+//
+// Only transit_type === 'staircase' features are considered.
+// Lifts are intentionally excluded — routing always targets staircases.
 // ──────────────────────────────────────────────────────────────────────────────
-function findNearestTransit(
+function getStaircasePairs(
   features: any[],
-  fromCoords: [number, number],
-  level: number
-): { coords: [number, number]; pairedCoords: [number, number] | null } | null {
-  const transitsOnLevel = features.filter(
+  originLevel: number,
+  destLevel: number
+): { originCoords: [number, number]; destCoords: [number, number]; name: string }[] {
+  // Index all transit features by node_id for O(1) lookup
+  const byNodeId: Record<string, any> = {}
+  for (const f of features) {
+    const nid = f.properties?.node_id
+    if (nid && f.properties?.type === 'transit') byNodeId[nid] = f
+  }
+
+  const pairs: { originCoords: [number, number]; destCoords: [number, number]; name: string }[] = []
+
+  const staircasesOnOrigin = features.filter(
     f => f.geometry?.type === 'Point' &&
     f.properties?.type === 'transit' &&
-    f.properties?.level === level
+    f.properties?.transit_type === 'staircase' &&
+    f.properties?.level === originLevel
   )
 
-  if (transitsOnLevel.length === 0) return null
+  for (const stair of staircasesOnOrigin) {
+    const connectsTo: string[] = stair.properties?.connects_to ?? []
+    for (const targetId of connectsTo) {
+      const paired = byNodeId[targetId]
+      if (!paired) continue
+      if (paired.properties?.level !== destLevel) continue
+      if (paired.properties?.transit_type !== 'staircase') continue
 
-  let nearest: any = null
-  let minDist = Infinity
-  for (const t of transitsOnLevel) {
-    const d = getDistance(fromCoords, t.geometry.coordinates as [number, number])
-    if (d < minDist) { minDist = d; nearest = t }
+      pairs.push({
+        originCoords: stair.geometry.coordinates as [number, number],
+        destCoords: paired.geometry.coordinates as [number, number],
+        name: stair.properties?.name ?? stair.properties?.node_id,
+      })
+    }
   }
-  if (!nearest) return null
 
-  const transitCoords = nearest.geometry.coordinates as [number, number]
-  const transitName = nearest.properties?.name
-  const transitNodeId = nearest.properties?.node_id
-
-  // Find paired transit on the other floor by name match or proximity (< 5m)
-  const otherLevel = level === 1 ? 2 : 1
-  const paired = features.find(
-    f => f.geometry?.type === 'Point' &&
-    f.properties?.type === 'transit' &&
-    f.properties?.level === otherLevel &&
-    (f.properties?.name === transitName ||
-     (transitNodeId && f.properties?.node_id && f.properties.node_id.replace(`_L${otherLevel}`, '') === transitNodeId.replace(`_L${level}`, '')) ||
-     getDistance(f.geometry.coordinates as [number, number], transitCoords) < 5)
-  )
-
-  return {
-    coords: transitCoords,
-    pairedCoords: paired ? (paired.geometry.coordinates as [number, number]) : null
-  }
+  return pairs
 }
 
+// ──────────────────────────────────────────────────────────────────────────────
+// Dijkstra cost-only helper (no path reconstruction, just total cost)
+// ──────────────────────────────────────────────────────────────────────────────
+function dijkstraCost(g: Graph, srcKey: string, dstKey: string): number {
+  if (srcKey === dstKey) return 0
+  try {
+    const path = dijkstra(g, srcKey, dstKey, 'weight')
+    if (!path || path.length < 2) return Infinity
+    let cost = 0
+    for (let i = 1; i < path.length; i++) {
+      const edge = g.findUndirectedEdge(path[i - 1], path[i])
+      if (edge) cost += g.getEdgeAttribute(edge, 'weight') ?? 0
+    }
+    return cost
+  } catch {
+    return Infinity
+  }
+}
 
 // ──────────────────────────────────────────────────────────────────────────────
 // Main export
@@ -319,48 +337,76 @@ export function computeShortestPath(
   }
 
   // ── Multi-floor route ─────────────────────────────────────────────────────
-  // Build independent graphs for origin and dest levels
   const originFloor = buildFloorGraph(features, originLevel)
   const destFloor = buildFloorGraph(features, destLevel)
 
-  // Find nearest transit node (lift) from origin — acts as staircase access point
-  const transitInfo = findNearestTransit(features, originCoords, originLevel)
-  if (!transitInfo) {
-    console.warn('[routing] No transit found on level', originLevel)
-    return []
-  }
-
-  const { coords: stairOnOrigin, pairedCoords: stairOnDest } = transitInfo
-
-  if (!stairOnDest) {
-    console.warn('[routing] No paired transit found on level', destLevel)
-    return []
-  }
-
-
-  // Snap all points into their respective floor graphs
+  // Snap origin and destination into their floor graphs first
   const originKey = snapIntoGraph(originCoords, originLevel, originFloor.g, originFloor.nodeCoords, originFloor.splitPaths)
-  const stairOriginKey = snapIntoGraph(stairOnOrigin, originLevel, originFloor.g, originFloor.nodeCoords, originFloor.splitPaths)
-
-  const stairDestKey = snapIntoGraph(stairOnDest, destLevel, destFloor.g, destFloor.nodeCoords, destFloor.splitPaths)
   const destKey = snapIntoGraph(destCoords, destLevel, destFloor.g, destFloor.nodeCoords, destFloor.splitPaths)
 
-  console.log('[routing] multi-floor:', { originKey, stairOriginKey, stairDestKey, destKey })
-
-  if (!originKey || !stairOriginKey || !stairDestKey || !destKey) return []
-
-  // Segment 1: origin → staircase on origin level
-  const seg1 = runDijkstra(originFloor.g, originKey, stairOriginKey, originLevel)
-  // Segment 2: staircase on dest level → destination
-  const seg2 = runDijkstra(destFloor.g, stairDestKey, destKey, destLevel)
-
-  if (!seg1 || !seg2) {
-    console.warn('[routing] Failed to compute one of the segments')
+  if (!originKey || !destKey) {
+    console.warn('[routing] Could not snap origin or destination into graph')
     return []
   }
 
-  // Stitch: seg1 ends at staircase on origin level, seg2 starts at staircase on dest level
-  // Remove the last point of seg1 to avoid duplicate at the staircase junction
-  const result = [...seg1.slice(0, -1), [stairOnOrigin[0], stairOnOrigin[1], originLevel] as [number, number, number], [stairOnDest[0], stairOnDest[1], destLevel] as [number, number, number], ...seg2.slice(1)]
+  // Get all staircase pairs connecting originLevel ↔ destLevel
+  const pairs = getStaircasePairs(features, originLevel, destLevel)
+  console.log('[routing] staircase pairs:', pairs.map(p => p.name))
+
+  if (pairs.length === 0) {
+    console.warn('[routing] No staircase pairs found between levels', originLevel, destLevel)
+    return []
+  }
+
+  // For each staircase candidate, snap it into both floor graphs and compute
+  // total Dijkstra cost: cost(origin→stair on originLevel) + cost(stair→dest on destLevel)
+  // Pick the candidate with minimum total cost.
+  let bestSeg1: [number, number, number][] | null = null
+  let bestSeg2: [number, number, number][] | null = null
+  let bestStairOrigin: [number, number] | null = null
+  let bestStairDest: [number, number] | null = null
+  let bestCost = Infinity
+
+  for (const pair of pairs) {
+    // Clone the floor graphs so snapping one candidate doesn't contaminate others
+    const oFloor = buildFloorGraph(features, originLevel)
+    const dFloor = buildFloorGraph(features, destLevel)
+
+    const oOriginKey = snapIntoGraph(originCoords, originLevel, oFloor.g, oFloor.nodeCoords, oFloor.splitPaths)
+    const oStairKey = snapIntoGraph(pair.originCoords, originLevel, oFloor.g, oFloor.nodeCoords, oFloor.splitPaths)
+    const dStairKey = snapIntoGraph(pair.destCoords, destLevel, dFloor.g, dFloor.nodeCoords, dFloor.splitPaths)
+    const dDestKey = snapIntoGraph(destCoords, destLevel, dFloor.g, dFloor.nodeCoords, dFloor.splitPaths)
+
+    if (!oOriginKey || !oStairKey || !dStairKey || !dDestKey) continue
+
+    const cost1 = dijkstraCost(oFloor.g, oOriginKey, oStairKey)
+    const cost2 = dijkstraCost(dFloor.g, dStairKey, dDestKey)
+    const total = cost1 + cost2
+
+    console.log(`[routing] stair ${pair.name}: cost1=${cost1.toFixed(1)} cost2=${cost2.toFixed(1)} total=${total.toFixed(1)}`)
+
+    if (total < bestCost) {
+      bestCost = total
+      bestStairOrigin = pair.originCoords
+      bestStairDest = pair.destCoords
+
+      bestSeg1 = runDijkstra(oFloor.g, oOriginKey, oStairKey, originLevel)
+      bestSeg2 = runDijkstra(dFloor.g, dStairKey, dDestKey, destLevel)
+    }
+  }
+
+  if (!bestSeg1 || !bestSeg2 || !bestStairOrigin || !bestStairDest) {
+    console.warn('[routing] Failed to compute route via any staircase')
+    return []
+  }
+
+  // Stitch segments: seg1 ends at staircase on originLevel, transition, seg2 starts at staircase on destLevel
+  const result: [number, number, number][] = [
+    ...bestSeg1.slice(0, -1),
+    [bestStairOrigin[0], bestStairOrigin[1], originLevel],
+    [bestStairDest[0], bestStairDest[1], destLevel],
+    ...bestSeg2.slice(1),
+  ]
+  console.log('[routing] best stair cost:', bestCost.toFixed(1), 'path length:', result.length)
   return result
 }

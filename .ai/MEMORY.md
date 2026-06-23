@@ -96,8 +96,11 @@ Transit nodes (lifts/staircases) at the same physical XY on L1 and L2 (e.g. `nac
 - **`staircaseConnectorData` useMemo DELETED** from MapCanvas
 - **`routeData` and `inactiveRouteData`** rewritten to use `buildSegments()` helper that splits route into multiple contiguous same-level LineStrings — correctly handles the case where two separate segments of the same level (origin→stair AND stair→dest if same-floor fallback) both render
 
-**Transit data note**: GeoJSON only has `transit_type === 'lift'` entries (no explicit staircase markers). Design decision: route to nearest lift, which is assumed to be co-located with a staircase. The `findNearestTransit` function matches L1↔L2 pairs by name (e.g. "Lift 1") or node_id suffix stripping.
+**Transit data note**: GeoJSON has BOTH `transit_type === 'staircase'` AND `transit_type === 'lift'` entries. Routing exclusively uses `staircase` transit nodes (lifts excluded). Staircase pairs are resolved via the `connects_to` array (authoritative, not proximity). 
+
+**Optimal staircase selection**: ALL valid staircase pairs between floors are evaluated. For each pair, independent floor graphs are built and Dijkstra cost (origin→stair + stair→dest) is computed. The minimum-cost pair wins. This ensures the truly shortest walking route, not just the geographically closest staircase.
 
 **Snap lines**:
 - `startSnapLineData`: rawOrigin → routeCoords[0] (always rendered with start-snap style)
 - `destSnapLineData`: routeCoords[-1] → destCoords (rendered purple dashed if dest is on different floor from active level)
+
