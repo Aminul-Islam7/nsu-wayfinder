@@ -115,6 +115,17 @@ Transit nodes (lifts/staircases) at the same physical XY on L1 and L2 (e.g. `nac
 3. **Staircase Transition Smoothing**: Appended the raw staircase coordinates `bestStairOrigin` and `bestStairDest` to `fullSeg1` and `fullSeg2` respectively, before passing them to `smoothPath`. This allows the corner-rounding algorithm to curve the transitions between stair entry/exit points and the level corridor paths, resolving all remaining sharp corners at multi-floor joins.
 4. **Cleaned Map Layers**: Removed the separate `start-snap-line-source` and `dest-snap-line-source` layers and variables from `MapCanvas.tsx`, letting the single continuous, curved path render natively with uniform line-join and line-cap settings.
 5. **Simplified App.tsx Stats**: Removed manual haversine additions of snap lines in `App.tsx` since `route.routeCoordinates` now includes the snap lines, automatically accounting for them in the distance loop.
-+
+
+### 2026-06-24 — Route Growing Animation
+
+**Problem**: The route line rendered instantly without visual progression, which lacked a premium/interactive feel.
+
+**Decision**: Implement a smooth, client-side route drawing animation.
+
+**Implementation**:
+1. **Distance-based Interpolation**: Rather than advancing the animation frame-by-frame on a fixed count of path vertices (which causes speed spikes on tight curves with dense points), we compute cumulative haversine distances along the full path. The path grows at a constant linear speed (approx 40 meters/sec) over a duration bounded between 1.5 and 4.0 seconds.
+2. **Smooth Growing State**: Local component state `animatedCoords` tracks the coordinates of the path traversed up to the current frame time, with the final segment coordinate interpolated dynamically.
+3. **Seamless Multi-Floor Continuity**: Since `buildSegments()` operates directly on `animatedCoords`, the active and inactive floor segments grow in perfect sync as if they are a single continuous line, avoiding simultaneous segment draws or long pauses.
+
 
 

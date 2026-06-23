@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo } from 'react'
+import React, { useCallback, useEffect, useMemo, useState } from 'react'
 import Map, { Source, Layer, Marker, NavigationControl } from 'react-map-gl/maplibre'
 import type { MapMouseEvent } from 'react-map-gl/maplibre'
 import maplibregl from 'maplibre-gl'
@@ -113,6 +113,88 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
     setRouteCoordinates,
   ])
 
+  // Helper: haversine distance between two coords
+  const haversineDist = (a: [number, number], b: [number, number]): number => {
+    const R = 6371e3
+    const dLat = (b[1] - a[1]) * Math.PI / 180
+    const dLon = (b[0] - a[0]) * Math.PI / 180
+    const s = Math.sin(dLat / 2) ** 2 + Math.cos(a[1] * Math.PI / 180) * Math.cos(b[1] * Math.PI / 180) * Math.sin(dLon / 2) ** 2
+    return R * 2 * Math.atan2(Math.sqrt(s), Math.sqrt(1 - s))
+  }
+
+  // Route drawing animation state & effect
+  const [animatedCoords, setAnimatedCoords] = useState<[number, number, number][]>([])
+
+  useEffect(() => {
+    const coords = route.routeCoordinates
+    if (!coords || coords.length === 0) {
+      setAnimatedCoords([])
+      return
+    }
+
+    // 1. Calculate cumulative segment distances
+    const distances: number[] = [0]
+    for (let i = 1; i < coords.length; i++) {
+      const d = haversineDist([coords[i - 1][0], coords[i - 1][1]], [coords[i][0], coords[i][1]])
+      distances.push(distances[i - 1] + d)
+    }
+
+    const totalDistance = distances[distances.length - 1]
+
+    if (totalDistance < 0.1) {
+      setAnimatedCoords(coords)
+      return
+    }
+
+    // slow grow speed: ~40 meters per second, bounded between 1.5s and 4s
+    const duration = Math.max(1500, Math.min(4000, totalDistance * 25))
+
+    let animationFrameId: number
+    const startTime = performance.now()
+
+    const animate = (time: number) => {
+      const elapsed = time - startTime
+      const progress = Math.min(1, elapsed / duration)
+      const currentDist = progress * totalDistance
+
+      let idx = 0
+      while (idx < distances.length - 1 && distances[idx + 1] <= currentDist) {
+        idx++
+      }
+
+      if (progress >= 1 || idx >= distances.length - 1) {
+        setAnimatedCoords(coords)
+        return
+      }
+
+      const startPoint = coords[idx]
+      const endPoint = coords[idx + 1]
+      const segDist = distances[idx + 1] - distances[idx]
+      
+      const newCoords: [number, number, number][] = coords.slice(0, idx + 1)
+
+      if (segDist > 0.001) {
+        const ratio = (currentDist - distances[idx]) / segDist
+        const interpLng = startPoint[0] + ratio * (endPoint[0] - startPoint[0])
+        const interpLat = startPoint[1] + ratio * (endPoint[1] - startPoint[1])
+        const level = endPoint[2]
+        newCoords.push([interpLng, interpLat, level])
+      }
+
+      setAnimatedCoords(newCoords)
+
+      if (progress < 1) {
+        animationFrameId = requestAnimationFrame(animate)
+      }
+    }
+
+    animationFrameId = requestAnimationFrame(animate)
+
+    return () => {
+      cancelAnimationFrame(animationFrameId)
+    }
+  }, [route.routeCoordinates])
+
   // Filter features for the building footprint
   const footprintData = useMemo(() => {
     const filtered = features.filter(
@@ -198,8 +280,8 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
 
   // Active floor route: one or more LineStrings for contiguous segments on activeLevel
   const routeData = useMemo(() => {
-    if (!route.routeCoordinates || route.routeCoordinates.length === 0) return null
-    const segments = buildSegments(route.routeCoordinates, activeLevel)
+    if (animatedCoords.length === 0) return null
+    const segments = buildSegments(animatedCoords, activeLevel)
     if (segments.length === 0) return null
     return {
       type: 'FeatureCollection' as const,
@@ -210,12 +292,12 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
       })),
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [route.routeCoordinates, activeLevel])
+  }, [animatedCoords, activeLevel])
 
   // Inactive floor route: all segments NOT on activeLevel (purple dashed)
   const inactiveRouteData = useMemo(() => {
-    if (!route.routeCoordinates || route.routeCoordinates.length === 0) return null
-    const segments = buildSegments(route.routeCoordinates, 'inactive')
+    if (animatedCoords.length === 0) return null
+    const segments = buildSegments(animatedCoords, 'inactive')
     if (segments.length === 0) return null
     return {
       type: 'FeatureCollection' as const,
@@ -226,7 +308,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
       })),
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [route.routeCoordinates, activeLevel])
+  }, [animatedCoords, activeLevel])
 
 
   // MapLibre Layer Styles for Building Outlines
