@@ -338,6 +338,24 @@ export default function App() {
     }
   }, [route.rawOrigin, route.originLevel, route.destination, features, activeLevel, isLoading])
 
+  // ── Auto-select starting level when route is rendered ────────────
+  const prevRouteKeyRef = useRef('')
+  useEffect(() => {
+    const originCoords = route.origin
+    const destId = route.destination
+    const originLevel = route.originLevel
+
+    if (originCoords && destId && originLevel) {
+      const currentKey = `${originCoords[0]},${originCoords[1]},${destId}`
+      if (prevRouteKeyRef.current !== currentKey) {
+        prevRouteKeyRef.current = currentKey
+        setActiveLevel(originLevel)
+      }
+    } else {
+      prevRouteKeyRef.current = ''
+    }
+  }, [route.origin, route.destination, route.originLevel, setActiveLevel])
+
   // ── POI lists ────────────────────────────────────────────────────
   const pois = useMemo(() =>
     features.filter(f => f.properties?.type === 'poi')
@@ -540,7 +558,9 @@ export default function App() {
     setDestination(newDestination)
     setDestQuery(newDestQuery)
 
-    if (newDestination) {
+    if (newOriginLevel) {
+      setActiveLevel(newOriginLevel)
+    } else if (newDestination) {
       if (newDestination.startsWith('coord:')) {
         const parts = newDestination.replace('coord:', '').split(',')
         setActiveLevel(parseInt(parts[2], 10) as Level)
@@ -550,8 +570,6 @@ export default function App() {
           setActiveLevel((poi.properties?.level || activeLevel) as Level)
         }
       }
-    } else if (newOriginLevel) {
-      setActiveLevel(newOriginLevel)
     }
   }
 
@@ -777,8 +795,8 @@ export default function App() {
           </div>
 
           {/* Connector dots + Flip Button */}
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '2px 28px 2px 20px' }}>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'relative', height: 24, padding: '2px 20px' }}>
+            <div style={{ position: 'absolute', left: 26.5, display: 'flex', flexDirection: 'column', gap: 3 }}>
               {[0, 1, 2].map(i => (
                 <div key={i} style={{ width: 3, height: 3, borderRadius: '50%', background: isDark ? 'rgba(255,255,255,0.18)' : 'rgba(0,0,0,0.14)' }} />
               ))}
@@ -787,7 +805,7 @@ export default function App() {
               title="Swap start and destination"
               onClick={handleFlip}
               style={{
-                background: hov,
+                background: 'transparent',
                 border: 'none',
                 cursor: 'pointer',
                 borderRadius: '50%',
