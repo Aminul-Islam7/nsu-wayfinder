@@ -288,6 +288,13 @@ export default function App() {
         }
       }
     }
+
+    if (levelParam) {
+      const lvl = parseInt(levelParam, 10) as Level
+      if (lvl === 1 || lvl === 2) {
+        setActiveLevel(lvl)
+      }
+    }
   }, [isLoading, features, setRawOrigin, setOrigin, setDestination, setActiveLevel])
 
   // ── Sync Store state -> URL ──────────────────────────────────────
@@ -312,7 +319,6 @@ export default function App() {
       params.delete('lng')
       params.delete('lon')
       params.delete('longitude')
-      params.delete('level')
     } else {
       params.delete('start')
     }
@@ -322,6 +328,8 @@ export default function App() {
     } else {
       params.delete('dest')
     }
+
+    params.set('level', activeLevel.toString())
 
     const newSearch = params.toString()
     const newUrl = `${window.location.pathname}${newSearch ? '?' + newSearch : ''}`
