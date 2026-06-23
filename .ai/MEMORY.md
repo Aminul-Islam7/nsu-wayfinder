@@ -140,3 +140,12 @@ Transit nodes (lifts/staircases) at the same physical XY on L1 and L2 (e.g. `nac
 **Fix**:
 1. **Load State**: Modified initial load `useEffect` in `App.tsx` to parse `level` query parameter and call `setActiveLevel(lvl)` if valid (1 or 2).
 2. **Store to URL Sync**: Modified state-to-URL sync `useEffect` in `App.tsx` to always append `level` query parameter and stopped deleting it on start selection. Persists active level seamlessly alongside route selections.
+
+### 2026-06-24 — Swap Start and Destination Selections
+
+**Problem**: Reversing the route origin and destination required clearing and re-entering coordinates, which was tedious and lacked shortcut capabilities.
+
+**Fix**:
+1. **Swap Button UI**: Plotted a styled circular `ArrowUpDown` swap button between the start and destination search inputs in `App.tsx`.
+2. **Swap Logic**: Implemented `handleFlip` in `App.tsx` to parse current start and destination details (including matching coordinates to POI names/IDs or coordinate strings) and swap them in the store and inputs. Handles blank states smoothly.
+3. **Animation Replay**: Since swapping reverses the coordinate ordering (e.g. $[A, \dots, B]$ to $[B, \dots, A]$), the new route path naturally triggers the path growing grow animation from the new starting point.
