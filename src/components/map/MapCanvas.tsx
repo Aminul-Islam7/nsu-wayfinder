@@ -4,9 +4,7 @@ import type { MapMouseEvent } from 'react-map-gl/maplibre'
 import maplibregl from 'maplibre-gl'
 import 'maplibre-gl/dist/maplibre-gl.css'
 import { useStore } from '../../store/useStore'
-import type { Level } from '../../store/useStore'
 import { GraduationCap, MapPin, ArrowUpDown, Info } from 'lucide-react'
-import { nearestPointOnLine, point } from '@turf/turf'
 import { computeShortestPath } from '../../lib/routing'
 
 interface MapCanvasProps {
@@ -59,14 +57,11 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
 }) => {
   const {
     activeLevel,
-    setActiveLevel,
     features,
     isLoading,
     error,
     fetchFeatures,
     route,
-    setOrigin,
-    setRawOrigin,
     setRouteCoordinates,
   } = useStore()
 

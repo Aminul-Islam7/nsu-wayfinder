@@ -145,86 +145,188 @@ function buildFloorGraph(
 // ──────────────────────────────────────────────────────────────────────────────
 // Snap a point into a floor graph, return node key
 // ──────────────────────────────────────────────────────────────────────────────
-function snapIntoGraph(
-  coords: [number, number],
+function snapMultipleIntoGraph(
+  coordsList: [number, number][],
   level: number,
   g: Graph,
   nodeCoords: { key: string; coords: [number, number]; level: number }[],
   splitPaths: { idx: number; level: number; coords: [number, number][] }[]
-): string | null {
+): (string | null)[] {
   const SNAP_THRESH = 0.1
-  const pt = point(coords)
+  const results: (string | null)[] = []
+  const snapsToProcess: {
+    coordsListIndex: number
+    snapCoords: [number, number]
+    bestPathIdx: number
+    segIndex: number
+    key: string
+  }[] = []
 
-  const levelPaths = splitPaths.map(p => ({
-    pathIdx: p.idx,
-    feature: {
-      type: 'Feature' as const,
-      geometry: { type: 'LineString' as const, coordinates: p.coords },
-      properties: { pathIdx: p.idx }
+  for (let i = 0; i < coordsList.length; i++) {
+    const coords = coordsList[i]
+    const pt = point(coords)
+
+    const levelPaths = splitPaths.map(p => ({
+      pathIdx: p.idx,
+      feature: {
+        type: 'Feature' as const,
+        geometry: { type: 'LineString' as const, coordinates: p.coords },
+        properties: { pathIdx: p.idx }
+      }
+    }))
+
+    if (levelPaths.length === 0) {
+      results.push(null)
+      continue
     }
-  }))
 
-  if (levelPaths.length === 0) return null
+    let minDist = Infinity
+    let bestSnapped: any = null
+    let bestPathIdx = -1
 
-  let minDist = Infinity
-  let bestSnapped: any = null
-  let bestPathIdx = -1
+    for (const { pathIdx, feature } of levelPaths) {
+      try {
+        const snapped = nearestPointOnLine(feature, pt)
+        const dist = snapped.properties?.dist ?? Infinity
+        if (dist < minDist) { minDist = dist; bestSnapped = snapped; bestPathIdx = pathIdx }
+      } catch { /* skip */ }
+    }
 
-  for (const { pathIdx, feature } of levelPaths) {
-    try {
-      const snapped = nearestPointOnLine(feature, pt)
-      const dist = snapped.properties?.dist ?? Infinity
-      if (dist < minDist) { minDist = dist; bestSnapped = snapped; bestPathIdx = pathIdx }
-    } catch { /* skip */ }
+    if (!bestSnapped || bestPathIdx === -1) {
+      results.push(null)
+      continue
+    }
+
+    const snapCoords = bestSnapped.geometry.coordinates as [number, number]
+
+    // 1. Check if close to existing node in nodeCoords
+    let reusedKey: string | null = null
+    for (const n of nodeCoords) {
+      if (getDistance(n.coords, snapCoords) < SNAP_THRESH) {
+        reusedKey = n.key
+        break
+      }
+    }
+
+    // 2. Check if close to already snapped point in snapsToProcess
+    if (!reusedKey) {
+      for (const processed of snapsToProcess) {
+        if (getDistance(processed.snapCoords, snapCoords) < SNAP_THRESH) {
+          reusedKey = processed.key
+          break
+        }
+      }
+    }
+
+    const segIndex = bestSnapped.properties?.index
+    if (segIndex === undefined) {
+      results.push(null)
+      continue
+    }
+
+    if (reusedKey) {
+      results.push(reusedKey)
+      snapsToProcess.push({
+        coordsListIndex: i,
+        snapCoords,
+        bestPathIdx,
+        segIndex,
+        key: reusedKey
+      })
+    } else {
+      const key = getNodeKey(snapCoords, level)
+      results.push(key)
+      snapsToProcess.push({
+        coordsListIndex: i,
+        snapCoords,
+        bestPathIdx,
+        segIndex,
+        key
+      })
+    }
   }
 
-  if (!bestSnapped || bestPathIdx === -1) return null
+  const segmentsToSplit: Record<string, {
+    bestPathIdx: number
+    segIndex: number
+    snaps: { key: string; snapCoords: [number, number] }[]
+  }> = {}
 
-  const snapCoords = bestSnapped.geometry.coordinates as [number, number]
+  for (const snap of snapsToProcess) {
+    if (g.hasNode(snap.key)) continue
 
-  // Reuse existing node if close enough
-  for (const n of nodeCoords) {
-    if (getDistance(n.coords, snapCoords) < SNAP_THRESH) return n.key
+    const segKey = `${snap.bestPathIdx}_${snap.segIndex}`
+    if (!segmentsToSplit[segKey]) {
+      segmentsToSplit[segKey] = {
+        bestPathIdx: snap.bestPathIdx,
+        segIndex: snap.segIndex,
+        snaps: []
+      }
+    }
+    if (!segmentsToSplit[segKey].snaps.some(s => s.key === snap.key)) {
+      segmentsToSplit[segKey].snaps.push({ key: snap.key, snapCoords: snap.snapCoords })
+    }
   }
 
-  const splitPath = splitPaths.find(p => p.idx === bestPathIdx)
-  if (!splitPath) return null
+  for (const segKey of Object.keys(segmentsToSplit)) {
+    const { bestPathIdx, segIndex, snaps } = segmentsToSplit[segKey]
+    const splitPath = splitPaths.find(p => p.idx === bestPathIdx)
+    if (!splitPath || segIndex >= splitPath.coords.length - 1) continue
 
-  const segIndex = bestSnapped.properties?.index
-  if (segIndex === undefined || segIndex >= splitPath.coords.length - 1) return null
+    const pA = splitPath.coords[segIndex]
+    const pB = splitPath.coords[segIndex + 1]
 
-  const pA = splitPath.coords[segIndex]
-  const pB = splitPath.coords[segIndex + 1]
+    let kA: string | null = null
+    let kB: string | null = null
+    for (const n of nodeCoords) {
+      if (getDistance(n.coords, pA) < SNAP_THRESH) kA = n.key
+      if (getDistance(n.coords, pB) < SNAP_THRESH) kB = n.key
+    }
+    if (!kA) {
+      kA = getNodeKey(pA, level)
+      if (!g.hasNode(kA)) { g.addNode(kA, { coords: pA, level }); nodeCoords.push({ key: kA, coords: pA, level }) }
+    }
+    if (!kB) {
+      kB = getNodeKey(pB, level)
+      if (!g.hasNode(kB)) { g.addNode(kB, { coords: pB, level }); nodeCoords.push({ key: kB, coords: pB, level }) }
+    }
 
-  // Need at least one neighbor node
-  let kA: string | null = null
-  let kB: string | null = null
-  for (const n of nodeCoords) {
-    if (getDistance(n.coords, pA) < SNAP_THRESH) kA = n.key
-    if (getDistance(n.coords, pB) < SNAP_THRESH) kB = n.key
+    // Sort snaps by distance from pA
+    snaps.sort((a, b) => getDistance(pA, a.snapCoords) - getDistance(pA, b.snapCoords))
+
+    for (const s of snaps) {
+      if (!g.hasNode(s.key)) {
+        g.addNode(s.key, { coords: s.snapCoords, level })
+        nodeCoords.push({ key: s.key, coords: s.snapCoords, level })
+      }
+    }
+
+    let prevKey = kA
+    let prevCoords = pA
+    for (const s of snaps) {
+      const dist = getDistance(prevCoords, s.snapCoords)
+      if (dist > 0.001 && prevKey !== s.key) {
+        if (!g.hasUndirectedEdge(prevKey, s.key)) {
+          g.addUndirectedEdge(prevKey, s.key, { weight: dist })
+        }
+      }
+      prevKey = s.key
+      prevCoords = s.snapCoords
+    }
+
+    const distToB = getDistance(prevCoords, pB)
+    if (distToB > 0.001 && prevKey !== kB) {
+      if (!g.hasUndirectedEdge(prevKey, kB)) {
+        g.addUndirectedEdge(prevKey, kB, { weight: distToB })
+      }
+    }
+
+    if (g.hasUndirectedEdge(kA, kB)) {
+      g.dropUndirectedEdge(kA, kB)
+    }
   }
-  if (!kA) {
-    kA = getNodeKey(pA, level)
-    if (!g.hasNode(kA)) { g.addNode(kA, { coords: pA, level }); nodeCoords.push({ key: kA, coords: pA, level }) }
-  }
-  if (!kB) {
-    kB = getNodeKey(pB, level)
-    if (!g.hasNode(kB)) { g.addNode(kB, { coords: pB, level }); nodeCoords.push({ key: kB, coords: pB, level }) }
-  }
 
-  const snapKey = getNodeKey(snapCoords, level)
-  if (g.hasNode(snapKey)) return snapKey
-
-  g.addNode(snapKey, { coords: snapCoords, level })
-  nodeCoords.push({ key: snapKey, coords: snapCoords, level })
-
-  const dA = getDistance(pA, snapCoords)
-  const dB = getDistance(snapCoords, pB)
-  if (dA > 0.001) g.addUndirectedEdge(kA, snapKey, { weight: dA })
-  if (dB > 0.001) g.addUndirectedEdge(snapKey, kB, { weight: dB })
-  if (g.hasUndirectedEdge(kA, kB)) g.dropUndirectedEdge(kA, kB)
-
-  return snapKey
+  return results
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -339,8 +441,7 @@ export function computeShortestPath(
   // ── Same-floor route ──────────────────────────────────────────────────────
   if (originLevel === destLevel) {
     const { g, nodeCoords, splitPaths } = buildFloorGraph(features, originLevel)
-    const originKey = snapIntoGraph(originCoords, originLevel, g, nodeCoords, splitPaths)
-    const destKey = snapIntoGraph(destCoords, destLevel, g, nodeCoords, splitPaths)
+    const [originKey, destKey] = snapMultipleIntoGraph([originCoords, destCoords], originLevel, g, nodeCoords, splitPaths)
     if (!originKey || !destKey) return []
     return runDijkstra(g, originKey, destKey, originLevel) ?? []
   }
@@ -350,8 +451,8 @@ export function computeShortestPath(
   const destFloor = buildFloorGraph(features, destLevel)
 
   // Snap origin and destination into their floor graphs first
-  const originKey = snapIntoGraph(originCoords, originLevel, originFloor.g, originFloor.nodeCoords, originFloor.splitPaths)
-  const destKey = snapIntoGraph(destCoords, destLevel, destFloor.g, destFloor.nodeCoords, destFloor.splitPaths)
+  const [originKey] = snapMultipleIntoGraph([originCoords], originLevel, originFloor.g, originFloor.nodeCoords, originFloor.splitPaths)
+  const [destKey] = snapMultipleIntoGraph([destCoords], destLevel, destFloor.g, destFloor.nodeCoords, destFloor.splitPaths)
 
   if (!originKey || !destKey) {
     console.warn('[routing] Could not snap origin or destination into graph')
@@ -381,10 +482,8 @@ export function computeShortestPath(
     const oFloor = buildFloorGraph(features, originLevel)
     const dFloor = buildFloorGraph(features, destLevel)
 
-    const oOriginKey = snapIntoGraph(originCoords, originLevel, oFloor.g, oFloor.nodeCoords, oFloor.splitPaths)
-    const oStairKey = snapIntoGraph(pair.originCoords, originLevel, oFloor.g, oFloor.nodeCoords, oFloor.splitPaths)
-    const dStairKey = snapIntoGraph(pair.destCoords, destLevel, dFloor.g, dFloor.nodeCoords, dFloor.splitPaths)
-    const dDestKey = snapIntoGraph(destCoords, destLevel, dFloor.g, dFloor.nodeCoords, dFloor.splitPaths)
+    const [oOriginKey, oStairKey] = snapMultipleIntoGraph([originCoords, pair.originCoords], originLevel, oFloor.g, oFloor.nodeCoords, oFloor.splitPaths)
+    const [dStairKey, dDestKey] = snapMultipleIntoGraph([pair.destCoords, destCoords], destLevel, dFloor.g, dFloor.nodeCoords, dFloor.splitPaths)
 
     if (!oOriginKey || !oStairKey || !dStairKey || !dDestKey) continue
 

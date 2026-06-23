@@ -6,7 +6,7 @@ import { useDeviceOrientation } from './hooks/useDeviceOrientation'
 import { useDeadReckoning } from './hooks/useDeadReckoning'
 import { useGeolocation } from './hooks/useGeolocation'
 import {
-  Search, X, MapPin, GraduationCap, Navigation,
+  Search, X, MapPin, GraduationCap,
   Sun, Moon, ArrowUpDown, Layers, Clock, Route,
   ChevronRight, AlertTriangle, Footprints, Radio
 } from 'lucide-react'
@@ -83,7 +83,7 @@ export default function App() {
   const {
     activeLevel, setActiveLevel,
     features, isLoading,
-    route, setDestination, setOrigin, setRawOrigin, clearRoute, setRouteCoordinates,
+    route, setDestination, setOrigin, setRawOrigin, setRouteCoordinates,
     isAdminMode,
     trackingEnabled, setTrackingEnabled,
     gpsActive, setGpsActive,
@@ -536,7 +536,7 @@ export default function App() {
       <div style={{ position: 'absolute', inset: 0, zIndex: 0 }}>
         <MapCanvas
           isDark={isDark}
-          pickingFromMap={pickMode}
+          pickingFromMap={!!pickMode}
           heading={hasCompass ? heading : null}
           gpsActive={gpsActive}
           trackingEnabled={trackingEnabled}
