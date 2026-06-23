@@ -101,7 +101,12 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
 
     const rawOrigin = route.rawOrigin || route.origin
     const pathCoords = computeShortestPath(features, originLevel, rawOrigin, destLevel, destCoords)
-    setRouteCoordinates(pathCoords)
+    const currentCoords = useStore.getState().route.routeCoordinates
+    const isSame = currentCoords.length === pathCoords.length &&
+      currentCoords.every((c, i) => c[0] === pathCoords[i][0] && c[1] === pathCoords[i][1] && c[2] === pathCoords[i][2])
+    if (!isSame) {
+      setRouteCoordinates(pathCoords)
+    }
   }, [
     features,
     isLoading,
@@ -147,7 +152,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
     }
 
     // slow grow speed: ~40 meters per second, bounded between 1.5s and 4s
-    const duration = Math.max(1500, Math.min(4000, totalDistance * 25))
+    const duration = Math.max(1500, Math.min(4000, totalDistance * 16))
 
     let animationFrameId: number
     const startTime = performance.now()
