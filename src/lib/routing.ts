@@ -297,7 +297,8 @@ function getStaircasePairs(
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
-// Dijkstra cost-only helper (no path reconstruction, just total cost)
+// Dijkstra cost-only helper (no path reconstruction, just total cost).
+// Edge weights equal haversine distance, so we sum node-to-node distances.
 // ──────────────────────────────────────────────────────────────────────────────
 function dijkstraCost(g: Graph, srcKey: string, dstKey: string): number {
   if (srcKey === dstKey) return 0
@@ -306,14 +307,22 @@ function dijkstraCost(g: Graph, srcKey: string, dstKey: string): number {
     if (!path || path.length < 2) return Infinity
     let cost = 0
     for (let i = 1; i < path.length; i++) {
-      const edge = g.findUndirectedEdge(path[i - 1], path[i])
-      if (edge) cost += g.getEdgeAttribute(edge, 'weight') ?? 0
+      const edgeKey = g.undirectedEdge(path[i - 1], path[i])
+      if (edgeKey !== undefined) {
+        cost += g.getEdgeAttribute(edgeKey, 'weight') ?? 0
+      } else {
+        // Fallback: use haversine between nodes (edge weight = haversine, so equivalent)
+        const a = g.getNodeAttributes(path[i - 1])
+        const b = g.getNodeAttributes(path[i])
+        cost += getDistance(a.coords, b.coords)
+      }
     }
     return cost
   } catch {
     return Infinity
   }
 }
+
 
 // ──────────────────────────────────────────────────────────────────────────────
 // Main export
