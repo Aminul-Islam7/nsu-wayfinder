@@ -99,8 +99,22 @@ Transit nodes (lifts/staircases) at the same physical XY on L1 and L2 (e.g. `nac
 **Transit data note**: GeoJSON has BOTH `transit_type === 'staircase'` AND `transit_type === 'lift'` entries. Routing exclusively uses `staircase` transit nodes (lifts excluded). Staircase pairs are resolved via the `connects_to` array (authoritative, not proximity). 
 
 **Optimal staircase selection**: ALL valid staircase pairs between floors are evaluated. For each pair, independent floor graphs are built and Dijkstra cost (origin→stair + stair→dest) is computed. The minimum-cost pair wins. This ensures the truly shortest walking route, not just the geographically closest staircase.
+ 
+ **Snap lines**:
+ - `startSnapLineData`: rawOrigin → routeCoords[0] (always rendered with start-snap style)
+ - `destSnapLineData`: routeCoords[-1] → destCoords (rendered purple dashed if dest is on different floor from active level)
+ 
+ 
+### 2026-06-24 — Curved Route Path Joins and Snap Line Integration
 
-**Snap lines**:
-- `startSnapLineData`: rawOrigin → routeCoords[0] (always rendered with start-snap style)
-- `destSnapLineData`: routeCoords[-1] → destCoords (rendered purple dashed if dest is on different floor from active level)
+**Problem**: The route path lines had sharp joints at corners. In addition, the snap lines connecting the user (You) to the corridor network and the corridor network to the destination POI were separate lines, which met the main route at sharp angles and looked disconnected/discontinuous. Furthermore, in multi-floor routing, corners connecting staircase transitions (vertical stairs to level corridors) remained sharp.
+
+**Fix**:
+1. **Merged Snap Lines into Route**: Integrated the raw origin (`originCoords`) and raw destination (`destCoords`) directly into the main `route.routeCoordinates` array inside `computeShortestPath` (in same-floor and multi-floor routing segments).
+2. **Curved Corner Smoothing**: Implemented a `smoothPath` helper in `routing.ts` using quadratic Bezier curve corner-rounding. It cuts corners within each level-specific path segment (scaling the cut distance based on segment length up to ~3 meters) and generates sampled Bezier curve points to round the corner.
+3. **Staircase Transition Smoothing**: Appended the raw staircase coordinates `bestStairOrigin` and `bestStairDest` to `fullSeg1` and `fullSeg2` respectively, before passing them to `smoothPath`. This allows the corner-rounding algorithm to curve the transitions between stair entry/exit points and the level corridor paths, resolving all remaining sharp corners at multi-floor joins.
+4. **Cleaned Map Layers**: Removed the separate `start-snap-line-source` and `dest-snap-line-source` layers and variables from `MapCanvas.tsx`, letting the single continuous, curved path render natively with uniform line-join and line-cap settings.
+5. **Simplified App.tsx Stats**: Removed manual haversine additions of snap lines in `App.tsx` since `route.routeCoordinates` now includes the snap lines, automatically accounting for them in the distance loop.
++
+
 

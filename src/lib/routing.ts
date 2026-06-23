@@ -427,6 +427,74 @@ function dijkstraCost(g: Graph, srcKey: string, dstKey: string): number {
 
 
 // ──────────────────────────────────────────────────────────────────────────────
+// ──────────────────────────────────────────────────────────────────────────────
+// Smooth a path using quadratic Bezier curves for corner rounding
+// ──────────────────────────────────────────────────────────────────────────────
+function smoothPath(path: [number, number, number][]): [number, number, number][] {
+  if (path.length <= 2) return path
+  const level = path[0][2]
+  const coords = path.map(p => [p[0], p[1]] as [number, number])
+  const smoothedCoords: [number, number][] = []
+
+  smoothedCoords.push(coords[0])
+  const MAX_CUT = 0.00003 // ~3 meters in degrees at this latitude
+
+  for (let i = 1; i < coords.length - 1; i++) {
+    const A = coords[i - 1]
+    const B = coords[i]
+    const C = coords[i + 1]
+
+    const v1 = [A[0] - B[0], A[1] - B[1]] as [number, number]
+    const v2 = [C[0] - B[0], C[1] - B[1]] as [number, number]
+
+    const L1 = Math.sqrt(v1[0] * v1[0] + v1[1] * v1[1])
+    const L2 = Math.sqrt(v2[0] * v2[0] + v2[1] * v2[1])
+
+    if (L1 < 1e-9 || L2 < 1e-9) {
+      smoothedCoords.push(B)
+      continue
+    }
+
+    const d = Math.min(L1 * 0.45, L2 * 0.45, MAX_CUT)
+
+    const P1: [number, number] = [
+      B[0] + (v1[0] / L1) * d,
+      B[1] + (v1[1] / L1) * d
+    ]
+    const P2: [number, number] = [
+      B[0] + (v2[0] / L2) * d,
+      B[1] + (v2[1] / L2) * d
+    ]
+
+    // Sample Bezier curve points
+    const samples = 8
+    for (let s = 0; s <= samples; s++) {
+      const t = s / samples
+      const x = (1 - t) * (1 - t) * P1[0] + 2 * (1 - t) * t * B[0] + t * t * P2[0]
+      const y = (1 - t) * (1 - t) * P1[1] + 2 * (1 - t) * t * B[1] + t * t * P2[1]
+      smoothedCoords.push([x, y])
+    }
+  }
+
+  smoothedCoords.push(coords[coords.length - 1])
+
+  // Deduplicate consecutive identical/very close coordinates
+  const result: [number, number, number][] = []
+  for (const c of smoothedCoords) {
+    if (result.length === 0) {
+      result.push([c[0], c[1], level])
+    } else {
+      const last = result[result.length - 1]
+      const dx = c[0] - last[0]
+      const dy = c[1] - last[1]
+      if (Math.sqrt(dx * dx + dy * dy) > 1e-7) {
+        result.push([c[0], c[1], level])
+      }
+    }
+  }
+  return result
+}
+
 // Main export
 // ──────────────────────────────────────────────────────────────────────────────
 export function computeShortestPath(
@@ -443,7 +511,36 @@ export function computeShortestPath(
     const { g, nodeCoords, splitPaths } = buildFloorGraph(features, originLevel)
     const [originKey, destKey] = snapMultipleIntoGraph([originCoords, destCoords], originLevel, g, nodeCoords, splitPaths)
     if (!originKey || !destKey) return []
-    return runDijkstra(g, originKey, destKey, originLevel) ?? []
+    const rawPath = runDijkstra(g, originKey, destKey, originLevel) ?? []
+
+    // Add raw origin and raw destination to path to include snap lines
+    const fullPath: [number, number, number][] = []
+    if (originCoords) {
+      fullPath.push([originCoords[0], originCoords[1], originLevel])
+    }
+    for (const p of rawPath) {
+      if (fullPath.length > 0) {
+        const last = fullPath[fullPath.length - 1]
+        const dx = p[0] - last[0]
+        const dy = p[1] - last[1]
+        if (Math.sqrt(dx * dx + dy * dy) < 1e-7) continue
+      }
+      fullPath.push(p)
+    }
+    if (destCoords) {
+      if (fullPath.length > 0) {
+        const last = fullPath[fullPath.length - 1]
+        const dx = destCoords[0] - last[0]
+        const dy = destCoords[1] - last[1]
+        if (Math.sqrt(dx * dx + dy * dy) > 1e-7) {
+          fullPath.push([destCoords[0], destCoords[1], destLevel])
+        }
+      } else {
+        fullPath.push([destCoords[0], destCoords[1], destLevel])
+      }
+    }
+
+    return smoothPath(fullPath)
   }
 
   // ── Multi-floor route ─────────────────────────────────────────────────────
@@ -508,12 +605,64 @@ export function computeShortestPath(
     return []
   }
 
+  // Smooth segments on respective floors before stitching (with snap lines and staircase transitions included)
+  const fullSeg1: [number, number, number][] = []
+  if (originCoords) {
+    fullSeg1.push([originCoords[0], originCoords[1], originLevel])
+  }
+  for (const p of bestSeg1) {
+    if (fullSeg1.length > 0) {
+      const last = fullSeg1[fullSeg1.length - 1]
+      const dx = p[0] - last[0]
+      const dy = p[1] - last[1]
+      if (Math.sqrt(dx * dx + dy * dy) < 1e-7) continue
+    }
+    fullSeg1.push(p)
+  }
+  if (bestStairOrigin) {
+    const last = fullSeg1[fullSeg1.length - 1]
+    const dx = bestStairOrigin[0] - last[0]
+    const dy = bestStairOrigin[1] - last[1]
+    if (Math.sqrt(dx * dx + dy * dy) > 1e-7) {
+      fullSeg1.push([bestStairOrigin[0], bestStairOrigin[1], originLevel])
+    }
+  }
+
+  const fullSeg2: [number, number, number][] = []
+  if (bestStairDest) {
+    fullSeg2.push([bestStairDest[0], bestStairDest[1], destLevel])
+  }
+  for (const p of bestSeg2) {
+    if (fullSeg2.length > 0) {
+      const last = fullSeg2[fullSeg2.length - 1]
+      const dx = p[0] - last[0]
+      const dy = p[1] - last[1]
+      if (Math.sqrt(dx * dx + dy * dy) < 1e-7) continue
+    }
+    fullSeg2.push(p)
+  }
+  if (destCoords) {
+    if (fullSeg2.length > 0) {
+      const last = fullSeg2[fullSeg2.length - 1]
+      const dx = destCoords[0] - last[0]
+      const dy = destCoords[1] - last[1]
+      if (Math.sqrt(dx * dx + dy * dy) > 1e-7) {
+        fullSeg2.push([destCoords[0], destCoords[1], destLevel])
+      }
+    } else {
+      fullSeg2.push([destCoords[0], destCoords[1], destLevel])
+    }
+  }
+
+  const smoothedSeg1 = smoothPath(fullSeg1)
+  const smoothedSeg2 = smoothPath(fullSeg2)
+
   // Stitch segments: seg1 ends at staircase on originLevel, transition, seg2 starts at staircase on destLevel
   const result: [number, number, number][] = [
-    ...bestSeg1.slice(0, -1),
+    ...smoothedSeg1.slice(0, -1),
     [bestStairOrigin[0], bestStairOrigin[1], originLevel],
     [bestStairDest[0], bestStairDest[1], destLevel],
-    ...bestSeg2.slice(1),
+    ...smoothedSeg2.slice(1),
   ]
   console.log('[routing] best stair cost:', bestCost.toFixed(1), 'path length:', result.length)
   return result

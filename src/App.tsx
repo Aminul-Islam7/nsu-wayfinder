@@ -399,7 +399,7 @@ export default function App() {
   const routeStats = useMemo(() => {
     if (!route.routeCoordinates || route.routeCoordinates.length < 2) return null
 
-    // Core path distance
+    // Core path distance (includes snap lines already merged)
     let distM = 0
     for (let i = 1; i < route.routeCoordinates.length; i++) {
       distM += haversine(
@@ -408,31 +408,14 @@ export default function App() {
       )
     }
 
-    // Add YOU marker → snapped path start distance
-    const youCoords = route.rawOrigin || route.origin
-    if (youCoords) {
-      const firstCoord = route.routeCoordinates[0]
-      distM += haversine(youCoords as [number, number], [firstCoord[0], firstCoord[1]])
-    }
-
-    // Add last route node → destination POI distance
-    let destCoords: [number, number] | null = null
     let destName = ''
     if (route.destination?.startsWith('coord:')) {
-      const parts = route.destination.replace('coord:', '').split(',')
-      destCoords = [parseFloat(parts[0]), parseFloat(parts[1])]
       destName = 'Destination'
     } else {
       const destFeature = features.find(f => f.properties?._feature_id === route.destination)
       if (destFeature?.geometry?.type === 'Point') {
-        destCoords = destFeature.geometry.coordinates as [number, number]
         destName = destFeature.properties?.name || ''
       }
-    }
-
-    if (destCoords) {
-      const lastCoord = route.routeCoordinates[route.routeCoordinates.length - 1]
-      distM += haversine([lastCoord[0], lastCoord[1]], destCoords)
     }
 
     const totalSeconds = Math.round(distM / 1.2)
@@ -449,7 +432,7 @@ export default function App() {
     }
 
     return { distStr, mins, secs, transitions, destName }
-  }, [route.routeCoordinates, route.rawOrigin, route.origin, route.destination, features])
+  }, [route.routeCoordinates, route.destination, features])
 
   const hasRoute  = !!(route.destination && route.routeCoordinates.length > 0)
   const hasOrigin = !!(route.rawOrigin || route.origin)

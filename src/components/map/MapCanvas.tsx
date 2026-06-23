@@ -99,13 +99,15 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
 
     const originLevel = route.originLevel || activeLevel
 
-    const pathCoords = computeShortestPath(features, originLevel, route.origin, destLevel, destCoords)
+    const rawOrigin = route.rawOrigin || route.origin
+    const pathCoords = computeShortestPath(features, originLevel, rawOrigin, destLevel, destCoords)
     setRouteCoordinates(pathCoords)
   }, [
     features,
     isLoading,
     activeLevel,
     route.origin,
+    route.rawOrigin,
     route.originLevel,
     route.destination,
     setRouteCoordinates,
@@ -149,47 +151,9 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
 
 
 
-  // Helper: haversine distance between two coords
-  const haversineDist = (a: [number, number], b: [number, number]): number => {
-    const R = 6371e3
-    const dLat = (b[1] - a[1]) * Math.PI / 180
-    const dLon = (b[0] - a[0]) * Math.PI / 180
-    const s = Math.sin(dLat / 2) ** 2 + Math.cos(a[1] * Math.PI / 180) * Math.cos(b[1] * Math.PI / 180) * Math.sin(dLon / 2) ** 2
-    return R * 2 * Math.atan2(Math.sqrt(s), Math.sqrt(1 - s))
-  }
 
-  // Create LineString geometry linking YOU marker to the start of the calculated path
-  // Show only when origin is on the active level
-  const startSnapLineData = useMemo(() => {
-    if (
-      !route.routeCoordinates ||
-      route.routeCoordinates.length === 0
-    ) {
-      return null
-    }
 
-    const youCoords = route.rawOrigin || route.origin
-    if (!youCoords) return null
 
-    const firstRouteCoord = route.routeCoordinates[0]
-    const pathStartCoords = [firstRouteCoord[0], firstRouteCoord[1]] as [number, number]
-
-    if (haversineDist(youCoords as [number, number], pathStartCoords) < 0.01) return null
-
-    return {
-      type: 'FeatureCollection' as const,
-      features: [
-        {
-          type: 'Feature' as const,
-          geometry: {
-            type: 'LineString' as const,
-            coordinates: [youCoords, pathStartCoords],
-          },
-          properties: {},
-        },
-      ],
-    }
-  }, [route.rawOrigin, route.origin, route.routeCoordinates])
 
   // Find destination level and coordinate
   const destInfo = useMemo(() => {
@@ -210,24 +174,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
     }
   }, [features, route.destination])
 
-  // Create LineString geometry for the destination snap line (last route point → dest POI)
-  const destSnapLineData = useMemo(() => {
-    if (!destInfo || !route.routeCoordinates || route.routeCoordinates.length === 0) return null
-    const lastRouteCoord = route.routeCoordinates[route.routeCoordinates.length - 1]
-    return {
-      type: 'FeatureCollection' as const,
-      features: [
-        {
-          type: 'Feature' as const,
-          geometry: {
-            type: 'LineString' as const,
-            coordinates: [[lastRouteCoord[0], lastRouteCoord[1]], destInfo.coords],
-          },
-          properties: {},
-        },
-      ],
-    }
-  }, [destInfo, route.routeCoordinates])
+
 
   // staircaseConnectorData removed — new routing.ts explicitly routes origin→staircase→dest
   // All route segments are encoded in route.routeCoordinates with level tags.
@@ -320,33 +267,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
 
 
 
-  const startSnapLineLayerStyle: any = {
-    id: 'start-snap-line-active',
-    type: 'line',
-    layout: {
-      'line-cap': 'round',
-      'line-join': 'round',
-    },
-    paint: {
-      'line-color': '#2563eb', // blue — same as active route
-      'line-width': 3,
-      'line-opacity': 0.8,
-    },
-  }
 
-  const destSnapLineLayerStyle: any = {
-    id: 'dest-snap-line-active',
-    type: 'line',
-    layout: {
-      'line-cap': 'round',
-      'line-join': 'round',
-    },
-    paint: {
-      'line-color': '#2563eb', // blue — consistent with active route
-      'line-width': 4,
-      'line-opacity': 0.85,
-    },
-  }
 
   const routeLayerStyle: any = {
     id: 'active-route',
@@ -456,16 +377,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
           </Source>
         )}
 
-        {/* Solid line from You marker to start of walkable path */}
-        {startSnapLineData && (
-          <Source id="start-snap-line-source" type="geojson" data={startSnapLineData}>
-            {(route.originLevel || activeLevel) === activeLevel ? (
-              <Layer key="start-snap-active" {...startSnapLineLayerStyle} />
-            ) : (
-              <Layer key="start-snap-inactive" {...inactiveRouteLayerStyle} id="start-snap-line-inactive" />
-            )}
-          </Source>
-        )}
+
 
         {/* Active calculated route */}
         {routeData && (
@@ -481,16 +393,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
           </Source>
         )}
 
-        {/* Solid line from end of walkable path to destination POI */}
-        {destSnapLineData && (
-          <Source id="dest-snap-line-source" type="geojson" data={destSnapLineData}>
-            {destInfo && destInfo.level === activeLevel ? (
-              <Layer key="dest-snap-active" {...destSnapLineLayerStyle} />
-            ) : (
-              <Layer key="dest-snap-inactive" {...inactiveRouteLayerStyle} id="dest-snap-line-inactive" />
-            )}
-          </Source>
-        )}
+
 
 
         {/* Visitor Origin Marker (You) */}
