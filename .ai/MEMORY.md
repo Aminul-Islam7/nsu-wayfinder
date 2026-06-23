@@ -127,5 +127,12 @@ Transit nodes (lifts/staircases) at the same physical XY on L1 and L2 (e.g. `nac
 2. **Smooth Growing State**: Local component state `animatedCoords` tracks the coordinates of the path traversed up to the current frame time, with the final segment coordinate interpolated dynamically.
 3. **Seamless Multi-Floor Continuity**: Since `buildSegments()` operates directly on `animatedCoords`, the active and inactive floor segments grow in perfect sync as if they are a single continuous line, avoiding simultaneous segment draws or long pauses.
 
+### 2026-06-24 — Prevent Route Animation Replay on Level Switch
+
+**Problem**: Changing the active level triggered the pathfinding `useEffect` to recalculate the route, calling `setRouteCoordinates` with a new array reference and causing the drawing animation to replay from the beginning even though the route was unchanged.
+
+**Fix**: Added a coordinates comparison check using `useStore.getState().route.routeCoordinates` before calling `setRouteCoordinates`. If the newly calculated coordinates are identical to the current ones, the store update is skipped, preserving the array reference and preventing the animation from replaying.
+
+
 
 
