@@ -254,6 +254,8 @@ export default function App() {
   // ── Route stats ──────────────────────────────────────────────────
   const routeStats = useMemo(() => {
     if (!route.routeCoordinates || route.routeCoordinates.length < 2) return null
+
+    // Core path distance
     let distM = 0
     for (let i = 1; i < route.routeCoordinates.length; i++) {
       distM += haversine(
@@ -261,17 +263,37 @@ export default function App() {
         [route.routeCoordinates[i][0], route.routeCoordinates[i][1]]
       )
     }
-    const mins    = Math.max(1, Math.ceil(distM / 1.2 / 60))
+
+    // Add YOU marker → snapped path start distance
+    const youCoords = route.rawOrigin || route.origin
+    if (youCoords) {
+      const firstCoord = route.routeCoordinates[0]
+      distM += haversine(youCoords as [number, number], [firstCoord[0], firstCoord[1]])
+    }
+
+    // Add last route node → destination POI distance
+    const destFeature = features.find(f => f.properties?._feature_id === route.destination)
+    if (destFeature?.geometry?.type === 'Point') {
+      const destCoords = destFeature.geometry.coordinates as [number, number]
+      const lastCoord = route.routeCoordinates[route.routeCoordinates.length - 1]
+      distM += haversine([lastCoord[0], lastCoord[1]], destCoords)
+    }
+
+    const totalSeconds = Math.round(distM / 1.2)
+    const mins = Math.floor(totalSeconds / 60)
+    const secs = totalSeconds % 60
+    
     const distStr = distM < 1000 ? `${Math.round(distM)} m` : `${(distM / 1000).toFixed(1)} km`
+
     const transitions: Array<{ from: number; to: number }> = []
     for (let i = 1; i < route.routeCoordinates.length; i++) {
       const prev = route.routeCoordinates[i - 1][2], curr = route.routeCoordinates[i][2]
       if (curr !== prev && !transitions.find(t => t.from === prev && t.to === curr))
         transitions.push({ from: prev, to: curr })
     }
-    const destFeature = features.find(f => f.properties?._feature_id === route.destination)
-    return { distStr, mins, transitions, destName: destFeature?.properties?.name || '' }
-  }, [route.routeCoordinates, route.destination, features])
+
+    return { distStr, mins, secs, transitions, destName: destFeature?.properties?.name || '' }
+  }, [route.routeCoordinates, route.rawOrigin, route.origin, route.destination, features])
 
   const hasRoute  = !!(route.destination && route.routeCoordinates.length > 0)
   const hasOrigin = !!(route.rawOrigin || route.origin)
@@ -716,8 +738,9 @@ export default function App() {
                   <Clock size={17} color="#3b82f6" />
                 </div>
                 <div>
-                  <div style={{ fontSize: 20, fontWeight: 700, color: text, lineHeight: 1 }}>
-                    {routeStats.mins}<span style={{ fontSize: 12, fontWeight: 600, marginLeft: 3 }}>min</span>
+                  <div style={{ fontSize: 20, fontWeight: 700, color: text, lineHeight: 1, whiteSpace: 'nowrap' }}>
+                    {routeStats.mins > 0 && <>{routeStats.mins}<span style={{ fontSize: 12, fontWeight: 600, marginLeft: 2, marginRight: 6 }}>min</span></>}
+                    {routeStats.secs}<span style={{ fontSize: 12, fontWeight: 600, marginLeft: 2 }}>sec</span>
                   </div>
                   <div style={{ fontSize: 10, color: faint, marginTop: 2 }}>walking</div>
                 </div>

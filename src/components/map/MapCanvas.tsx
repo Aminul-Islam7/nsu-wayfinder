@@ -182,17 +182,36 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
 
 
 
-  // Create LineString geometry linking raw URL entry to snapped corridor path point
+  // Helper: haversine distance between two coords
+  const haversineDist = (a: [number, number], b: [number, number]): number => {
+    const R = 6371e3
+    const dLat = (b[1] - a[1]) * Math.PI / 180
+    const dLon = (b[0] - a[0]) * Math.PI / 180
+    const s = Math.sin(dLat / 2) ** 2 + Math.cos(a[1] * Math.PI / 180) * Math.cos(b[1] * Math.PI / 180) * Math.sin(dLon / 2) ** 2
+    return R * 2 * Math.atan2(Math.sqrt(s), Math.sqrt(1 - s))
+  }
+
+  // Create LineString geometry linking YOU marker to the start of the calculated path
+  // Show only when origin is on the active level
   const startSnapLineData = useMemo(() => {
     if (
-      !route.rawOrigin ||
-      !route.origin ||
-      !route.destination ||
-      route.routeCoordinates.length === 0 ||
-      route.originLevel !== activeLevel
+      !route.routeCoordinates ||
+      route.routeCoordinates.length === 0
     ) {
       return null
     }
+
+    const youCoords = route.rawOrigin || route.origin
+    if (!youCoords) return null
+
+    // We only want to show this line if the YOU marker is on the currently active level
+    if ((route.originLevel || activeLevel) !== activeLevel) return null
+
+    const firstRouteCoord = route.routeCoordinates[0]
+    const pathStartCoords = [firstRouteCoord[0], firstRouteCoord[1]] as [number, number]
+
+    if (haversineDist(youCoords as [number, number], pathStartCoords) < 0.01) return null
+
     return {
       type: 'FeatureCollection' as const,
       features: [
@@ -200,13 +219,13 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
           type: 'Feature' as const,
           geometry: {
             type: 'LineString' as const,
-            coordinates: [route.rawOrigin, route.origin],
+            coordinates: [youCoords, pathStartCoords],
           },
           properties: {},
         },
       ],
     }
-  }, [route.rawOrigin, route.origin, route.destination, route.routeCoordinates, route.originLevel, activeLevel])
+  }, [route.rawOrigin, route.origin, route.routeCoordinates, route.originLevel, activeLevel])
 
   // Find destination level and coordinate
   const destInfo = useMemo(() => {
@@ -219,7 +238,8 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
     }
   }, [features, route.destination])
 
-  // Create LineString geometry for the destination snap line (walking path at the end)
+  // Create LineString geometry for the destination snap line (last route point → dest POI)
+  // Only shown when dest is on the active level
   const destSnapLineData = useMemo(() => {
     if (!destInfo || !route.routeCoordinates || route.routeCoordinates.length === 0 || destInfo.level !== activeLevel) return null
     const lastRouteCoord = route.routeCoordinates[route.routeCoordinates.length - 1]
@@ -237,6 +257,56 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
       ],
     }
   }, [destInfo, route.routeCoordinates, activeLevel])
+
+  // For multi-floor routes: find nearest staircase/transit on activeLevel and draw a
+  // connector from the last path node on this floor toward it.
+  const staircaseConnectorData = useMemo(() => {
+    if (!route.routeCoordinates || route.routeCoordinates.length === 0) return null
+    if (!destInfo) return null
+
+    // Only relevant when the destination is on a DIFFERENT floor from active
+    const isMultiFloor = destInfo.level !== (route.originLevel || activeLevel)
+    if (!isMultiFloor) return null
+
+    // Find the last coord on the activeLevel in the route
+    const activeLevelCoords = route.routeCoordinates.filter(c => c[2] === activeLevel)
+    if (activeLevelCoords.length === 0) return null
+    const lastOnLevel = activeLevelCoords[activeLevelCoords.length - 1] as [number, number, number]
+
+    // Find nearest staircase/transit feature on the activeLevel
+    const transitsOnLevel = features.filter(f =>
+      f.geometry?.type === 'Point' &&
+      f.properties?.type === 'transit' &&
+      f.properties?.level === activeLevel
+    )
+    if (transitsOnLevel.length === 0) return null
+
+    let nearest: [number, number] | null = null
+    let minDist = Infinity
+    for (const t of transitsOnLevel) {
+      const tc = t.geometry.coordinates as [number, number]
+      const d = haversineDist([lastOnLevel[0], lastOnLevel[1]], tc)
+      if (d < minDist) { minDist = d; nearest = tc }
+    }
+    if (!nearest) return null
+
+    // Don't draw if already very close (< 2m)
+    if (minDist < 2) return null
+
+    return {
+      type: 'FeatureCollection' as const,
+      features: [
+        {
+          type: 'Feature' as const,
+          geometry: {
+            type: 'LineString' as const,
+            coordinates: [[lastOnLevel[0], lastOnLevel[1]], nearest],
+          },
+          properties: {},
+        },
+      ],
+    }
+  }, [route.routeCoordinates, destInfo, route.originLevel, activeLevel, features])
 
   // Create LineString geometry for the active calculated route (filtered for active floor)
   const routeData = useMemo(() => {
@@ -348,48 +418,42 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
   const startSnapLineLayerStyle: any = {
     id: 'start-snap-line-active',
     type: 'line',
-    filter: ['!=', ['get', 'isInactive'], true],
-    paint: {
-      'line-color': '#2563eb', // blue color matching active You
-      'line-width': 3,
-      'line-dasharray': [2, 2],
-      'line-opacity': 0.8,
+    layout: {
+      'line-cap': 'round',
+      'line-join': 'round',
     },
-  }
-
-  const startSnapLineInactiveLayerStyle: any = {
-    id: 'start-snap-line-inactive',
-    type: 'line',
-    filter: ['==', ['get', 'isInactive'], true],
     paint: {
-      'line-color': '#8b5cf6', // violet for inactive
+      'line-color': '#2563eb', // blue — same as active route
       'line-width': 3,
-      'line-dasharray': [3, 3],
-      'line-opacity': 0.65,
+      'line-opacity': 0.8,
     },
   }
 
   const destSnapLineLayerStyle: any = {
     id: 'dest-snap-line-active',
     type: 'line',
-    filter: ['!=', ['get', 'isInactive'], true],
+    layout: {
+      'line-cap': 'round',
+      'line-join': 'round',
+    },
     paint: {
-      'line-color': '#10b981', // emerald color matching active dest
+      'line-color': '#2563eb', // blue — consistent with active route
       'line-width': 4,
-      'line-dasharray': [2, 2],
       'line-opacity': 0.85,
     },
   }
 
-  const destSnapLineInactiveLayerStyle: any = {
-    id: 'dest-snap-line-inactive',
+  const staircaseConnectorLayerStyle: any = {
+    id: 'staircase-connector',
     type: 'line',
-    filter: ['==', ['get', 'isInactive'], true],
+    layout: {
+      'line-cap': 'round',
+      'line-join': 'round',
+    },
     paint: {
-      'line-color': '#8b5cf6', // violet for inactive
+      'line-color': '#2563eb', // blue — consistent with active route
       'line-width': 4,
-      'line-dasharray': [3, 3],
-      'line-opacity': 0.65,
+      'line-opacity': 0.85,
     },
   }
 
@@ -489,11 +553,10 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
           </Source>
         )}
 
-        {/* Dotted snap line from You marker to start of route on path */}
+        {/* Solid line from You marker to start of walkable path */}
         {startSnapLineData && (
           <Source id="start-snap-line-source" type="geojson" data={startSnapLineData}>
             <Layer {...startSnapLineLayerStyle} />
-            <Layer {...startSnapLineInactiveLayerStyle} />
           </Source>
         )}
 
@@ -504,18 +567,24 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
           </Source>
         )}
 
-        {/* Inactive calculated route (overlaid) */}
+        {/* Inactive calculated route (overlaid dashed violet) */}
         {inactiveRouteData && (
           <Source id="inactive-route-source" type="geojson" data={inactiveRouteData}>
             <Layer {...inactiveRouteLayerStyle} />
           </Source>
         )}
 
-        {/* Dotted snap line from end of route to destination POI */}
+        {/* Solid line from end of walkable path to destination POI */}
         {destSnapLineData && (
           <Source id="dest-snap-line-source" type="geojson" data={destSnapLineData}>
             <Layer {...destSnapLineLayerStyle} />
-            <Layer {...destSnapLineInactiveLayerStyle} />
+          </Source>
+        )}
+
+        {/* Multi-floor: connector from last path node on this floor toward nearest staircase */}
+        {staircaseConnectorData && (
+          <Source id="staircase-connector-source" type="geojson" data={staircaseConnectorData}>
+            <Layer {...staircaseConnectorLayerStyle} />
           </Source>
         )}
 
