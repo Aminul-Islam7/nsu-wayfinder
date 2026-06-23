@@ -83,7 +83,7 @@ export default function App() {
   const {
     activeLevel, setActiveLevel,
     features, isLoading,
-    route, setDestination, setOrigin, setRawOrigin, clearRoute,
+    route, setDestination, setOrigin, setRawOrigin, clearRoute, setRouteCoordinates,
     isAdminMode,
     trackingEnabled, setTrackingEnabled,
     gpsActive, setGpsActive,
@@ -112,7 +112,7 @@ export default function App() {
   const [originQuery, setOriginQuery] = useState('')
   const [originOpen,  setOriginOpen]  = useState(false)
   const [originIdx,   setOriginIdx]   = useState(-1)
-  const [pickMode,    setPickMode]    = useState(false)
+  const [pickMode,    setPickMode]    = useState<'origin' | 'dest' | false>(false)
 
   const panelRef = useRef<HTMLDivElement>(null)
 
@@ -203,6 +203,7 @@ export default function App() {
   // ── Sync labels ──────────────────────────────────────────────────
   useEffect(() => {
     if (!route.destination) { setDestQuery(''); return }
+    if (route.destination.startsWith('coord:')) return
     const f = features.find(f => f.properties?._feature_id === route.destination)
     if (f) setDestQuery(f.properties?.name || '')
   }, [route.destination, features])
@@ -222,6 +223,114 @@ export default function App() {
     return () => document.removeEventListener('mousedown', fn)
   }, [])
 
+  // ── Sync URL -> Store state on initial load ─────────────────────
+  const urlLoadedRef = useRef(false)
+  useEffect(() => {
+    if (isLoading || features.length === 0 || urlLoadedRef.current) return
+    urlLoadedRef.current = true
+
+    const params = new URLSearchParams(window.location.search)
+    const startParam = params.get('start')
+    const destParam = params.get('dest')
+
+    // Support legacy params (lat, lng, level) as fallback
+    const latParam = params.get('lat')
+    const lngParam = params.get('lng') || params.get('lon') || params.get('longitude')
+    const levelParam = params.get('level')
+
+    if (startParam) {
+      if (startParam.startsWith('coord:')) {
+        const parts = startParam.replace('coord:', '').split(',')
+        if (parts.length >= 3) {
+          const lng = parseFloat(parts[0])
+          const lat = parseFloat(parts[1])
+          const lvl = parseInt(parts[2]) as Level
+          setRawOrigin([lng, lat])
+          setOrigin([lng, lat], lvl)
+          setOriginQuery(`${lat.toFixed(5)}, ${lng.toFixed(5)}`)
+          setActiveLevel(lvl)
+        }
+      } else {
+        const p = features.find(f => f.properties?._feature_id === startParam)
+        if (p && p.geometry?.coordinates) {
+          const [lng, lat] = p.geometry.coordinates
+          const lvl = (p.properties?.level || 1) as Level
+          setRawOrigin([lng, lat])
+          setOrigin([lng, lat], lvl)
+          setOriginQuery(p.properties?.name || '')
+          setActiveLevel(lvl)
+        }
+      }
+    } else if (latParam && lngParam) {
+      const rawLat = parseFloat(latParam)
+      const rawLng = parseFloat(lngParam)
+      const rawLevel = levelParam ? (parseInt(levelParam) as Level) : (1 as Level)
+      setRawOrigin([rawLng, rawLat])
+      setOrigin([rawLng, rawLat], rawLevel)
+      setOriginQuery(`${rawLat.toFixed(5)}, ${rawLng.toFixed(5)}`)
+      setActiveLevel(rawLevel)
+    }
+
+    if (destParam) {
+      if (destParam.startsWith('coord:')) {
+        const parts = destParam.replace('coord:', '').split(',')
+        if (parts.length >= 3) {
+          const lng = parseFloat(parts[0])
+          const lat = parseFloat(parts[1])
+          setDestination(destParam)
+          setDestQuery(`${lat.toFixed(5)}, ${lng.toFixed(5)}`)
+          setActiveLevel(parseInt(parts[2]) as Level)
+        }
+      } else {
+        const p = features.find(f => f.properties?._feature_id === destParam)
+        if (p) {
+          setDestination(destParam)
+          setDestQuery(p.properties?.name || '')
+          setActiveLevel((p.properties?.level || 1) as Level)
+        }
+      }
+    }
+  }, [isLoading, features, setRawOrigin, setOrigin, setDestination, setActiveLevel])
+
+  // ── Sync Store state -> URL ──────────────────────────────────────
+  useEffect(() => {
+    if (isLoading || features.length === 0 || !urlLoadedRef.current) return
+    const params = new URLSearchParams(window.location.search)
+
+    if (route.rawOrigin) {
+      const matchedPoi = features.find(
+        f => f.geometry?.type === 'Point' &&
+        f.geometry.coordinates[0] === route.rawOrigin![0] &&
+        f.geometry.coordinates[1] === route.rawOrigin![1] &&
+        f.properties?.level === route.originLevel
+      )
+      if (matchedPoi) {
+        params.set('start', matchedPoi.properties?._feature_id)
+      } else {
+        params.set('start', `coord:${route.rawOrigin[0]},${route.rawOrigin[1]},${route.originLevel || activeLevel}`)
+      }
+      params.delete('lat')
+      params.delete('lng')
+      params.delete('lon')
+      params.delete('longitude')
+      params.delete('level')
+    } else {
+      params.delete('start')
+    }
+
+    if (route.destination) {
+      params.set('dest', route.destination)
+    } else {
+      params.delete('dest')
+    }
+
+    const newSearch = params.toString()
+    const newUrl = `${window.location.pathname}${newSearch ? '?' + newSearch : ''}`
+    if (window.location.search !== `?${newSearch}`) {
+      window.history.replaceState(null, '', newUrl)
+    }
+  }, [route.rawOrigin, route.originLevel, route.destination, features, activeLevel, isLoading])
+
   // ── POI lists ────────────────────────────────────────────────────
   const pois = useMemo(() =>
     features.filter(f => f.properties?.type === 'poi')
@@ -239,12 +348,48 @@ export default function App() {
 
   // ── Map pick origin ──────────────────────────────────────────────
   const onMapPick = useCallback((e: Event) => {
-    const { lng, lat, level } = (e as CustomEvent).detail as { lng: number; lat: number; level: Level }
-    setRawOrigin([lng, lat])
-    setOrigin([lng, lat], level)
-    setOriginQuery(`${lat.toFixed(5)}, ${lng.toFixed(5)}`)
+    if (!pickMode) return
+    let { lng, lat, level, featureId, name } = (e as CustomEvent).detail as { lng: number; lat: number; level: Level; featureId?: string; name?: string }
+
+    // Snap to nearest POI if click is very close (under 2.5m)
+    if (!featureId) {
+      const levelPois = features.filter(
+        f => f.geometry?.type === 'Point' &&
+        (f.properties?.type === 'poi' || f.properties?.type === 'transit') &&
+        f.properties?.level === level
+      )
+      let minDistance = Infinity
+      let closestPoi: any = null
+      for (const poi of levelPois) {
+        const d = haversine([lng, lat], poi.geometry.coordinates as [number, number])
+        if (d < minDistance) {
+          minDistance = d
+          closestPoi = poi
+        }
+      }
+      if (closestPoi && minDistance < 2.5) {
+        featureId = closestPoi.properties?._feature_id || closestPoi.properties?.node_id
+        name = closestPoi.properties?.name || 'POI'
+        lng = closestPoi.geometry.coordinates[0]
+        lat = closestPoi.geometry.coordinates[1]
+      }
+    }
+
+    if (pickMode === 'origin') {
+      setRawOrigin([lng, lat])
+      setOrigin([lng, lat], level)
+      setOriginQuery(featureId ? (name || '') : `${lat.toFixed(5)}, ${lng.toFixed(5)}`)
+    } else if (pickMode === 'dest') {
+      if (featureId) {
+        setDestination(featureId)
+        setDestQuery(name || '')
+      } else {
+        setDestination(`coord:${lng},${lat},${level}`)
+        setDestQuery(`${lat.toFixed(5)}, ${lng.toFixed(5)}`)
+      }
+    }
     setPickMode(false)
-  }, [setRawOrigin, setOrigin])
+  }, [pickMode, features, setRawOrigin, setOrigin, setDestination, setDestQuery])
 
   useEffect(() => {
     document.addEventListener('map:pick-origin', onMapPick)
@@ -272,9 +417,21 @@ export default function App() {
     }
 
     // Add last route node → destination POI distance
-    const destFeature = features.find(f => f.properties?._feature_id === route.destination)
-    if (destFeature?.geometry?.type === 'Point') {
-      const destCoords = destFeature.geometry.coordinates as [number, number]
+    let destCoords: [number, number] | null = null
+    let destName = ''
+    if (route.destination?.startsWith('coord:')) {
+      const parts = route.destination.replace('coord:', '').split(',')
+      destCoords = [parseFloat(parts[0]), parseFloat(parts[1])]
+      destName = 'Destination'
+    } else {
+      const destFeature = features.find(f => f.properties?._feature_id === route.destination)
+      if (destFeature?.geometry?.type === 'Point') {
+        destCoords = destFeature.geometry.coordinates as [number, number]
+        destName = destFeature.properties?.name || ''
+      }
+    }
+
+    if (destCoords) {
       const lastCoord = route.routeCoordinates[route.routeCoordinates.length - 1]
       distM += haversine([lastCoord[0], lastCoord[1]], destCoords)
     }
@@ -292,7 +449,7 @@ export default function App() {
         transitions.push({ from: prev, to: curr })
     }
 
-    return { distStr, mins, secs, transitions, destName: destFeature?.properties?.name || '' }
+    return { distStr, mins, secs, transitions, destName }
   }, [route.routeCoordinates, route.rawOrigin, route.origin, route.destination, features])
 
   const hasRoute  = !!(route.destination && route.routeCoordinates.length > 0)
@@ -334,7 +491,7 @@ export default function App() {
     name: string; sub: string; type: string; category?: string; transitType?: string
     isActive: boolean; onClick: () => void; onHover: () => void
   }) => {
-    const c = poiColor(type, category)
+    const c = type === 'pick-map' ? { bg: '#3b82f6', glow: 'rgba(59,130,246,0.3)' } : poiColor(type, category)
     return (
       <button
         onMouseEnter={onHover}
@@ -347,7 +504,8 @@ export default function App() {
           transition: 'background 0.12s ease',
         }}>
         <IconBox bg={c.bg} glow={c.glow}>
-          {type === 'transit'
+          {type === 'pick-map' ? <MapPin size={14} />
+            : type === 'transit'
             ? transitType === 'staircase' ? <StairsIcon /> : <ArrowUpDown size={14} />
             : category === 'classroom' ? <GraduationCap size={14} /> : <MapPin size={14} />}
         </IconBox>
@@ -477,10 +635,10 @@ export default function App() {
 
               <input
                 type="text"
-                placeholder={pickMode ? 'Tap the map to set start…' : 'Your starting point'}
+                placeholder={pickMode === 'origin' ? 'Tap the map to set start…' : 'Your starting point'}
                 value={originQuery}
-                onChange={e => { setOriginQuery(e.target.value); setOriginOpen(true); setPickMode(false) }}
-                onFocus={() => { if (!pickMode) setOriginOpen(true) }}
+                onChange={e => { setOriginQuery(e.target.value); setOriginOpen(true); setDestOpen(false); setPickMode(false) }}
+                onFocus={() => { if (pickMode !== 'origin') { setOriginOpen(true); setDestOpen(false); } }}
                 onKeyDown={onOriginKey}
                 style={{
                   flex: 1, minWidth: 0, background: 'transparent', border: 'none', outline: 'none',
@@ -491,21 +649,21 @@ export default function App() {
 
               {/* Pick-from-map button */}
               <button
-                title={pickMode ? 'Cancel' : 'Pick location from map'}
-                onClick={() => { setPickMode(p => !p); setOriginOpen(false) }}
+                title={pickMode === 'origin' ? 'Cancel' : 'Pick location from map'}
+                onClick={() => { setPickMode(p => p === 'origin' ? false : 'origin'); setOriginOpen(false) }}
                 style={{
                   width: 34, height: 34, borderRadius: 10, flexShrink: 0,
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  background: pickMode ? '#2563eb' : hov,
-                  color: pickMode ? '#fff' : sub,
+                  background: pickMode === 'origin' ? '#2563eb' : hov,
+                  color: pickMode === 'origin' ? '#fff' : sub,
                   border: 'none', cursor: 'pointer',
                   transition: 'all 0.18s cubic-bezier(0.34,1.26,0.64,1)',
                 }}>
-                <Navigation size={15} />
+                <MapPin size={15} />
               </button>
 
               {/* Clear origin */}
-              {hasOrigin && !pickMode && (
+              {hasOrigin && pickMode !== 'origin' && (
                 <button
                   onClick={() => { setRawOrigin(null); setOrigin(null); setOriginQuery('') }}
                   style={{
@@ -520,11 +678,19 @@ export default function App() {
             </div>
 
             {/* Origin dropdown */}
-            {originOpen && filteredOrigin.length > 0 && (
+            {originOpen && (
               <div style={{
                 ...glassStyle(isDark, { padding: '6px', position: 'absolute', top: '100%', left: 0, right: 0, marginTop: 6, zIndex: 50, maxHeight: isMobile ? 180 : 220, overflowY: 'auto' }),
                 animation: 'dropdown-in 0.18s cubic-bezier(0.34,1.26,0.64,1) forwards',
               }}>
+                <DropItem
+                  name="Pick location from map"
+                  sub="Tap the map to set starting point"
+                  type="pick-map"
+                  isActive={originIdx === -1}
+                  onHover={() => setOriginIdx(-1)}
+                  onClick={() => { setPickMode('origin'); setOriginOpen(false); }}
+                />
                 {filteredOrigin.map((p, i) => (
                   <DropItem key={p.properties?._feature_id || i}
                     name={p.properties?.name || ''}
@@ -560,10 +726,10 @@ export default function App() {
               </div>
               <input
                 type="text"
-                placeholder="Where do you want to go?"
+                placeholder={pickMode === 'dest' ? 'Tap the map to set destination…' : 'Where do you want to go?'}
                 value={destQuery}
-                onChange={e => { setDestQuery(e.target.value); setDestOpen(true); setDestIdx(-1) }}
-                onFocus={() => setDestOpen(true)}
+                onChange={e => { setDestQuery(e.target.value); setDestOpen(true); setOriginOpen(false); setDestIdx(-1); setPickMode(false) }}
+                onFocus={() => { if (pickMode !== 'dest') { setDestOpen(true); setOriginOpen(false); } }}
                 onKeyDown={onDestKey}
                 style={{
                   flex: 1, minWidth: 0, background: 'transparent', border: 'none', outline: 'none',
@@ -571,9 +737,23 @@ export default function App() {
                   fontFamily: 'inherit',
                 }}
               />
-              {(destQuery || route.destination) && (
+              {/* Pick-from-map button for dest */}
+              <button
+                title={pickMode === 'dest' ? 'Cancel' : 'Pick location from map'}
+                onClick={() => { setPickMode(p => p === 'dest' ? false : 'dest'); setDestOpen(false) }}
+                style={{
+                  width: 34, height: 34, borderRadius: 10, flexShrink: 0,
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  background: pickMode === 'dest' ? '#2563eb' : hov,
+                  color: pickMode === 'dest' ? '#fff' : sub,
+                  border: 'none', cursor: 'pointer',
+                  transition: 'all 0.18s cubic-bezier(0.34,1.26,0.64,1)',
+                }}>
+                <MapPin size={15} />
+              </button>
+              {(destQuery || route.destination) && pickMode !== 'dest' && (
                 <button
-                  onClick={() => { clearRoute(); setDestQuery(''); setDestOpen(false); setDestIdx(-1) }}
+                  onClick={() => { setDestination(null); setRouteCoordinates([]); setDestQuery(''); setDestOpen(false); setDestIdx(-1) }}
                   style={{
                     width: 34, height: 34, borderRadius: 10, flexShrink: 0,
                     display: 'flex', alignItems: 'center', justifyContent: 'center',
@@ -585,11 +765,19 @@ export default function App() {
             </div>
 
             {/* Destination dropdown */}
-            {destOpen && filteredDest.length > 0 && (
+            {destOpen && (
               <div style={{
                 ...glassStyle(isDark, { padding: '6px', position: 'absolute', top: '100%', left: 0, right: 0, marginTop: 6, zIndex: 50, maxHeight: isMobile ? 200 : 264, overflowY: 'auto' }),
                 animation: 'dropdown-in 0.18s cubic-bezier(0.34,1.26,0.64,1) forwards',
               }}>
+                <DropItem
+                  name="Pick location from map"
+                  sub="Tap the map to set destination point"
+                  type="pick-map"
+                  isActive={destIdx === -1}
+                  onHover={() => setDestIdx(-1)}
+                  onClick={() => { setPickMode('dest'); setDestOpen(false); }}
+                />
                 {filteredDest.map((poi, i) => (
                   <DropItem key={poi.properties?._feature_id}
                     name={poi.properties?.name || ''}
@@ -717,7 +905,7 @@ export default function App() {
                 </div>
               </div>
               <button
-                onClick={() => { clearRoute(); setDestQuery('') }}
+                onClick={() => { setDestination(null); setRouteCoordinates([]); setDestQuery('') }}
                 style={{
                   width: 34, height: 34, borderRadius: 10, flexShrink: 0,
                   display: 'flex', alignItems: 'center', justifyContent: 'center',

@@ -75,44 +75,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
     fetchFeatures()
   }, [fetchFeatures])
 
-  // Handle URL Parameter Parsing & Snapping — runs once after features load
-  useEffect(() => {
-    if (isLoading || features.length === 0) return
 
-    const params = new URLSearchParams(window.location.search)
-    const latParam = params.get('lat')
-    const lngParam = params.get('lng') || params.get('lon') || params.get('longitude')
-    const levelParam = params.get('level')
-
-    if (!latParam || !lngParam) return
-
-    const rawLat = parseFloat(latParam)
-    const rawLng = parseFloat(lngParam)
-    const rawLevel = levelParam ? (parseInt(levelParam) as Level) : (1 as Level)
-
-    if (isNaN(rawLat) || isNaN(rawLng)) return
-
-    setRawOrigin([rawLng, rawLat])
-    setActiveLevel(rawLevel)
-
-    const levelPaths = features.filter(
-      (f) => f.geometry && f.properties?.type === 'path' && f.properties?.level === rawLevel
-    )
-    if (levelPaths.length > 0) {
-      try {
-        const pt = point([rawLng, rawLat])
-        let minDist = Infinity
-        let snapped: [number, number] | null = null
-        for (const pf of levelPaths) {
-          const s = nearestPointOnLine(pf, pt)
-          const d = s.properties?.dist ?? Infinity
-          if (d < minDist) { minDist = d; snapped = s.geometry.coordinates as [number, number] }
-        }
-        if (snapped) setOrigin(snapped, rawLevel)
-      } catch (e) { console.error('Turf snap error:', e) }
-    }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [features, isLoading]) // intentionally omit setActiveLevel/setOrigin/setRawOrigin to prevent re-runs
 
   // Trigger pathfinding when origin and destination are selected
   useEffect(() => {
@@ -124,12 +87,21 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
       return
     }
 
-    // Find destination feature
-    const destFeature = features.find((f) => f.properties?._feature_id === route.destination)
-    if (!destFeature || !destFeature.geometry || destFeature.geometry.type !== 'Point') return
+    let destCoords: [number, number]
+    let destLevel: number
 
-    const destCoords = destFeature.geometry.coordinates as [number, number]
-    const destLevel = destFeature.properties?.level as number
+    if (route.destination.startsWith('coord:')) {
+      const parts = route.destination.replace('coord:', '').split(',')
+      destCoords = [parseFloat(parts[0]), parseFloat(parts[1])]
+      destLevel = parseInt(parts[2], 10)
+    } else {
+      // Find destination feature
+      const destFeature = features.find((f) => f.properties?._feature_id === route.destination)
+      if (!destFeature || !destFeature.geometry || destFeature.geometry.type !== 'Point') return
+      destCoords = destFeature.geometry.coordinates as [number, number]
+      destLevel = destFeature.properties?.level as number
+    }
+
     const originLevel = route.originLevel || activeLevel
 
     const pathCoords = computeShortestPath(features, originLevel, route.origin, destLevel, destCoords)
@@ -204,9 +176,6 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
     const youCoords = route.rawOrigin || route.origin
     if (!youCoords) return null
 
-    // We only want to show this line if the YOU marker is on the currently active level
-    if ((route.originLevel || activeLevel) !== activeLevel) return null
-
     const firstRouteCoord = route.routeCoordinates[0]
     const pathStartCoords = [firstRouteCoord[0], firstRouteCoord[1]] as [number, number]
 
@@ -225,11 +194,19 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
         },
       ],
     }
-  }, [route.rawOrigin, route.origin, route.routeCoordinates, route.originLevel, activeLevel])
+  }, [route.rawOrigin, route.origin, route.routeCoordinates])
 
   // Find destination level and coordinate
   const destInfo = useMemo(() => {
-    if (!route.destination || features.length === 0) return null
+    if (!route.destination) return null
+    if (route.destination.startsWith('coord:')) {
+      const parts = route.destination.replace('coord:', '').split(',')
+      return {
+        coords: [parseFloat(parts[0]), parseFloat(parts[1])] as [number, number],
+        level: parseInt(parts[2], 10)
+      }
+    }
+    if (features.length === 0) return null
     const destFeature = features.find((f) => f.properties?._feature_id === route.destination)
     if (!destFeature || !destFeature.geometry || destFeature.geometry.type !== 'Point') return null
     return {
@@ -239,9 +216,8 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
   }, [features, route.destination])
 
   // Create LineString geometry for the destination snap line (last route point → dest POI)
-  // Only shown when dest is on the active level
   const destSnapLineData = useMemo(() => {
-    if (!destInfo || !route.routeCoordinates || route.routeCoordinates.length === 0 || destInfo.level !== activeLevel) return null
+    if (!destInfo || !route.routeCoordinates || route.routeCoordinates.length === 0) return null
     const lastRouteCoord = route.routeCoordinates[route.routeCoordinates.length - 1]
     return {
       type: 'FeatureCollection' as const,
@@ -256,124 +232,58 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
         },
       ],
     }
-  }, [destInfo, route.routeCoordinates, activeLevel])
+  }, [destInfo, route.routeCoordinates])
 
-  // For multi-floor routes: find nearest staircase/transit on activeLevel and draw a
-  // connector from the last path node on this floor toward it.
-  const staircaseConnectorData = useMemo(() => {
-    if (!route.routeCoordinates || route.routeCoordinates.length === 0) return null
-    if (!destInfo) return null
+  // staircaseConnectorData removed — new routing.ts explicitly routes origin→staircase→dest
+  // All route segments are encoded in route.routeCoordinates with level tags.
 
-    // Only relevant when the destination is on a DIFFERENT floor from active
-    const isMultiFloor = destInfo.level !== (route.originLevel || activeLevel)
-    if (!isMultiFloor) return null
-
-    // Find the last coord on the activeLevel in the route
-    const activeLevelCoords = route.routeCoordinates.filter(c => c[2] === activeLevel)
-    if (activeLevelCoords.length === 0) return null
-    const lastOnLevel = activeLevelCoords[activeLevelCoords.length - 1] as [number, number, number]
-
-    // Find nearest staircase/transit feature on the activeLevel
-    const transitsOnLevel = features.filter(f =>
-      f.geometry?.type === 'Point' &&
-      f.properties?.type === 'transit' &&
-      f.properties?.level === activeLevel
-    )
-    if (transitsOnLevel.length === 0) return null
-
-    let nearest: [number, number] | null = null
-    let minDist = Infinity
-    for (const t of transitsOnLevel) {
-      const tc = t.geometry.coordinates as [number, number]
-      const d = haversineDist([lastOnLevel[0], lastOnLevel[1]], tc)
-      if (d < minDist) { minDist = d; nearest = tc }
-    }
-    if (!nearest) return null
-
-    // Don't draw if already very close (< 2m)
-    if (minDist < 2) return null
-
-    return {
-      type: 'FeatureCollection' as const,
-      features: [
-        {
-          type: 'Feature' as const,
-          geometry: {
-            type: 'LineString' as const,
-            coordinates: [[lastOnLevel[0], lastOnLevel[1]], nearest],
-          },
-          properties: {},
-        },
-      ],
-    }
-  }, [route.routeCoordinates, destInfo, route.originLevel, activeLevel, features])
-
-  // Create LineString geometry for the active calculated route (filtered for active floor)
-  const routeData = useMemo(() => {
-    if (!route.routeCoordinates || route.routeCoordinates.length === 0) return null
-    
-    // Filter coordinates matching activeLevel
-    const filteredCoords = route.routeCoordinates
-      .filter((coord) => coord[2] === activeLevel)
-      .map((coord) => [coord[0], coord[1]] as [number, number])
-
-    if (filteredCoords.length < 2) return null
-
-    return {
-      type: 'FeatureCollection' as const,
-      features: [
-        {
-          type: 'Feature' as const,
-          geometry: {
-            type: 'LineString' as const,
-            coordinates: filteredCoords,
-          },
-          properties: {},
-        },
-      ],
-    }
-  }, [route.routeCoordinates, activeLevel])
-
-  // Create LineString geometry for inactive floor route segments (overlaid dashed violet)
-  const inactiveRouteData = useMemo(() => {
-    if (!route.routeCoordinates || route.routeCoordinates.length === 0) return null
-
-    // Collect consecutive segments that are NOT on the activeLevel
-    // Build one or more LineString features per contiguous inactive segment
-    const inactiveFeatures: any[] = []
-    let currentSegment: [number, number][] = []
-
-    for (let i = 0; i < route.routeCoordinates.length; i++) {
-      const coord = route.routeCoordinates[i]
-      const isInactive = coord[2] !== activeLevel
-      if (isInactive) {
-        currentSegment.push([coord[0], coord[1]])
+  // Build contiguous same-level segments from routeCoordinates
+  function buildSegments(coords: [number, number, number][], forLevel: number | 'inactive'): [number, number][][] {
+    const segments: [number, number][][] = []
+    let current: [number, number][] = []
+    for (const coord of coords) {
+      const matches = forLevel === 'inactive' ? coord[2] !== activeLevel : coord[2] === forLevel
+      if (matches) {
+        current.push([coord[0], coord[1]])
       } else {
-        if (currentSegment.length >= 2) {
-          inactiveFeatures.push({
-            type: 'Feature' as const,
-            geometry: { type: 'LineString' as const, coordinates: currentSegment },
-            properties: {},
-          })
-        }
-        currentSegment = []
+        if (current.length >= 2) segments.push(current)
+        current = []
       }
     }
-    // flush last segment
-    if (currentSegment.length >= 2) {
-      inactiveFeatures.push({
-        type: 'Feature' as const,
-        geometry: { type: 'LineString' as const, coordinates: currentSegment },
-        properties: {},
-      })
-    }
+    if (current.length >= 2) segments.push(current)
+    return segments
+  }
 
-    if (inactiveFeatures.length === 0) return null
-
+  // Active floor route: one or more LineStrings for contiguous segments on activeLevel
+  const routeData = useMemo(() => {
+    if (!route.routeCoordinates || route.routeCoordinates.length === 0) return null
+    const segments = buildSegments(route.routeCoordinates, activeLevel)
+    if (segments.length === 0) return null
     return {
       type: 'FeatureCollection' as const,
-      features: inactiveFeatures,
+      features: segments.map(seg => ({
+        type: 'Feature' as const,
+        geometry: { type: 'LineString' as const, coordinates: seg },
+        properties: {},
+      })),
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [route.routeCoordinates, activeLevel])
+
+  // Inactive floor route: all segments NOT on activeLevel (purple dashed)
+  const inactiveRouteData = useMemo(() => {
+    if (!route.routeCoordinates || route.routeCoordinates.length === 0) return null
+    const segments = buildSegments(route.routeCoordinates, 'inactive')
+    if (segments.length === 0) return null
+    return {
+      type: 'FeatureCollection' as const,
+      features: segments.map(seg => ({
+        type: 'Feature' as const,
+        geometry: { type: 'LineString' as const, coordinates: seg },
+        properties: {},
+      })),
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [route.routeCoordinates, activeLevel])
 
 
@@ -443,20 +353,6 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
     },
   }
 
-  const staircaseConnectorLayerStyle: any = {
-    id: 'staircase-connector',
-    type: 'line',
-    layout: {
-      'line-cap': 'round',
-      'line-join': 'round',
-    },
-    paint: {
-      'line-color': '#2563eb', // blue — consistent with active route
-      'line-width': 4,
-      'line-opacity': 0.85,
-    },
-  }
-
   const routeLayerStyle: any = {
     id: 'active-route',
     type: 'line',
@@ -486,6 +382,15 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
     },
   }
 
+  // Map click handler for pick-from-map mode
+  const handleMapClick = useCallback((e: MapMouseEvent) => {
+    if (!pickingFromMap) return
+    const { lng, lat } = e.lngLat
+    document.dispatchEvent(new CustomEvent('map:pick-origin', {
+      detail: { lng, lat, level: activeLevel }
+    }))
+  }, [pickingFromMap, activeLevel])
+
   if (error) {
     return (
       <div className="absolute inset-0 flex flex-col items-center justify-center bg-background p-6 text-center">
@@ -506,17 +411,20 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
     )
   }
 
-  // Map click handler for pick-from-map mode
-  const handleMapClick = useCallback((e: MapMouseEvent) => {
-    if (!pickingFromMap) return
-    const { lng, lat } = e.lngLat
-    document.dispatchEvent(new CustomEvent('map:pick-origin', {
-      detail: { lng, lat, level: activeLevel }
-    }))
-  }, [pickingFromMap, activeLevel])
+  const pinCursorUrl = `url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='32' height='32' viewBox='0 0 24 24' fill='%23f43f5e' stroke='%23ffffff' stroke-width='2' stroke-linejoin='round' stroke-linecap='round'><path d='M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z'/><circle cx='12' cy='10' r='3' fill='%23ffffff'/></svg>") 16 32, crosshair`
 
   return (
-    <div className={`relative w-full h-full ${pickingFromMap ? 'cursor-crosshair' : ''}`}>
+    <div
+      style={pickingFromMap ? { cursor: pinCursorUrl } : {}}
+      className="relative w-full h-full"
+    >
+      {pickingFromMap && (
+        <style>{`
+          .maplibregl-canvas, .maplibregl-canvas-container {
+            cursor: ${pinCursorUrl} !important;
+          }
+        `}</style>
+      )}
       {/* Loading state indicator */}
       {isLoading && (
         <div className="absolute top-4 left-1/2 -translate-x-1/2 z-50 flex items-center gap-3 bg-background/90 backdrop-blur-md px-4 py-2.5 rounded-xl shadow-md border border-border animate-pulse">
@@ -556,7 +464,11 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
         {/* Solid line from You marker to start of walkable path */}
         {startSnapLineData && (
           <Source id="start-snap-line-source" type="geojson" data={startSnapLineData}>
-            <Layer {...startSnapLineLayerStyle} />
+            {(route.originLevel || activeLevel) === activeLevel ? (
+              <Layer key="start-snap-active" {...startSnapLineLayerStyle} />
+            ) : (
+              <Layer key="start-snap-inactive" {...inactiveRouteLayerStyle} id="start-snap-line-inactive" />
+            )}
           </Source>
         )}
 
@@ -577,16 +489,14 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
         {/* Solid line from end of walkable path to destination POI */}
         {destSnapLineData && (
           <Source id="dest-snap-line-source" type="geojson" data={destSnapLineData}>
-            <Layer {...destSnapLineLayerStyle} />
+            {destInfo && destInfo.level === activeLevel ? (
+              <Layer key="dest-snap-active" {...destSnapLineLayerStyle} />
+            ) : (
+              <Layer key="dest-snap-inactive" {...inactiveRouteLayerStyle} id="dest-snap-line-inactive" />
+            )}
           </Source>
         )}
 
-        {/* Multi-floor: connector from last path node on this floor toward nearest staircase */}
-        {staircaseConnectorData && (
-          <Source id="staircase-connector-source" type="geojson" data={staircaseConnectorData}>
-            <Layer {...staircaseConnectorLayerStyle} />
-          </Source>
-        )}
 
         {/* Visitor Origin Marker (You) */}
         {(route.rawOrigin || route.origin) && (
@@ -711,8 +621,22 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
           return (
             <Marker key={key} longitude={lng} latitude={lat} anchor="bottom">
               <div 
-                style={{ opacity: isInactiveFloor ? 0.6 : 1 }}
-                className="group flex flex-col items-center cursor-default"
+                style={{ opacity: isInactiveFloor ? 0.6 : 1, cursor: pickingFromMap ? 'pointer' : 'default' }}
+                className="group flex flex-col items-center"
+                onClick={(e) => {
+                  if (pickingFromMap) {
+                    e.stopPropagation()
+                    document.dispatchEvent(new CustomEvent('map:pick-origin', {
+                      detail: {
+                        lng,
+                        lat,
+                        level,
+                        featureId: marker.properties?._feature_id || node_id,
+                        name: name || 'POI'
+                      }
+                    }))
+                  }
+                }}
               >
                 {/* Outlined Label without Background */}
                 <div 
@@ -753,6 +677,28 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
             </Marker>
           )
         })}
+
+        {/* Custom Coordinate Destination Marker */}
+        {destInfo && route.destination?.startsWith('coord:') && (
+          <Marker longitude={destInfo.coords[0]} latitude={destInfo.coords[1]} anchor="bottom">
+            <div style={{ opacity: destInfo.level !== activeLevel ? 0.6 : 1 }} className="group flex flex-col items-center cursor-default">
+              <div 
+                style={{
+                  color: '#f43f5e',
+                  textShadow: isDarkMode
+                    ? '-1.2px -1.2px 0 #000, 1.2px -1.2px 0 #000, -1.2px 1.2px 0 #000, 1.2px 1.2px 0 #000'
+                    : '-1.2px -1.2px 0 #fff, 1.2px -1.2px 0 #fff, -1.2px 1.2px 0 #fff, 1.2px 1.2px 0 #fff'
+                }}
+                className="mb-1 text-[9.5px] font-extrabold tracking-wide whitespace-nowrap opacity-85 group-hover:opacity-100 transition-opacity pointer-events-none"
+              >
+                Destination {destInfo.level !== activeLevel && `(L${destInfo.level})`}
+              </div>
+              <div className="w-6 h-6 rounded-full flex items-center justify-center shadow-md border-2 border-background transition-transform duration-200 group-hover:scale-110 bg-rose-500 text-white">
+                <MapPin className="w-3.5 h-3.5" />
+              </div>
+            </div>
+          </Marker>
+        )}
       </Map>
     </div>
   )

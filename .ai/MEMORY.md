@@ -76,4 +76,28 @@ Transit nodes (lifts/staircases) at the same physical XY on L1 and L2 (e.g. `nac
 - **Problem**: Moving between floors required user interaction with floating "Continue to L2" buttons, and routes on inactive floors were hidden.
 - **Fix**: Wiped transition buttons. Plotted active floor route as a solid blue (#2563eb) line without borders. Plotted inactive floor route segments as dashed violet (#8b5cf6) lines overlaid on the current level. Updated markersData to include cross-floor destination POIs, and styled cross-floor markers (and inactive You marker) with 60% opacity and a floor suffix (e.g. `(L2)`). Hidden all non-destination POI pin icons during active routing, keeping only their text labels visible.
 
+### 2026-06-24 — Multi-floor Routing Redesign (Staircase Strategy)
 
+**Problem**: Three interrelated rendering bugs:
+1. Two lines going in different directions from the start point — one from `startSnapLineData` and another from `staircaseConnectorData`.
+2. The route on inactive floors showed as purple dashed but had no visual continuity from the staircase transition point.
+3. A phantom `staircaseConnectorData` useMemo in MapCanvas drew a line from the "last route coord on active level" to the nearest transit — this produced a duplicate/conflicting line.
+
+**Root Cause**: The old routing used Dijkstra across all floors simultaneously with transit edges, which let the router pick any path through the graph including non-staircase nodes. The `staircaseConnectorData` was a post-hoc hack to visually extend the route to the staircase — but since Dijkstra already handled the staircase edge, this produced a double-line.
+
+**Fix (2026-06-24)**:
+- **routing.ts completely rewritten** with explicit 3-segment architecture:
+  1. Build independent floor graphs for origin and dest levels
+  2. Find nearest transit node (lift) on origin level — treated as staircase access point
+  3. Dijkstra: origin → nearest transit (origin level)
+  4. Cross-floor jump point appended
+  5. Dijkstra: transit (dest level) → destination
+- Route output: `[...seg1, stairOnOrigin, stairOnDest, ...seg2]` with full level tags
+- **`staircaseConnectorData` useMemo DELETED** from MapCanvas
+- **`routeData` and `inactiveRouteData`** rewritten to use `buildSegments()` helper that splits route into multiple contiguous same-level LineStrings — correctly handles the case where two separate segments of the same level (origin→stair AND stair→dest if same-floor fallback) both render
+
+**Transit data note**: GeoJSON only has `transit_type === 'lift'` entries (no explicit staircase markers). Design decision: route to nearest lift, which is assumed to be co-located with a staircase. The `findNearestTransit` function matches L1↔L2 pairs by name (e.g. "Lift 1") or node_id suffix stripping.
+
+**Snap lines**:
+- `startSnapLineData`: rawOrigin → routeCoords[0] (always rendered with start-snap style)
+- `destSnapLineData`: routeCoords[-1] → destCoords (rendered purple dashed if dest is on different floor from active level)
