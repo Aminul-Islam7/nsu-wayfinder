@@ -1,21 +1,26 @@
 # Vibecoding Memory & Scratchpad
 
-> *Purpose: A living document to log things learned, persistent bugs, or temporary states during development. Append notes here as we go to maintain context across sessions.*
+> _Purpose: A living document to log things learned, persistent bugs, or temporary states during development. Append notes here as we go to maintain context across sessions._
 
 ## Current Status
+
 - Phase 1 complete: scaffold + schema + seed done.
 - Supabase project: `nsu-wayfinder` (id: `newohsmvykuelitzjrik`, region: ap-southeast-1)
 - All 147 clean features seeded into `map_features`.
+- 2026-06-27: Removed the developer-only logs button, added a polished initial loading experience, cleaned the search-card header so it no longer shows the NSU Wayfinder label, and compacted the floor/theme controls into a slimmer top-right bar.
+- 2026-06-27: Added a stronger visual treatment to the floating recenter and route-restore controls so primary actions feel clearer and more premium on mobile and desktop.
 
 ## Technical Decisions & Lessons Learned
 
 ### 2026-06-21 — Degenerate path fix decision
+
 **Problem**: `path_L1_001` and `path_L2_001` were zero-length LineStrings — both vertices identical at `[90.426206, 23.815926]`.
 
 **Decision: DELETED** (not fixed/repaired).
 
 **Reasoning**:
-- Coordinate `[90.426206, 23.815926]` is *outside* the building footprint. The footprint's northernmost vertex is `23.8158427`; the degenerate point sits at `23.815926` — ~6 m north of the roof line. It's a digitizing artifact (cursor click on empty space), not a real corridor gap.
+
+- Coordinate `[90.426206, 23.815926]` is _outside_ the building footprint. The footprint's northernmost vertex is `23.8158427`; the degenerate point sits at `23.815926` — ~6 m north of the roof line. It's a digitizing artifact (cursor click on empty space), not a real corridor gap.
 - The rest of the path mesh (L1: paths 002–038; L2: paths 002–015) is fully connected across the corridor grid without any bridging needed at that coordinate.
 - Fabricating a replacement path from an out-of-bounds point would inject a phantom edge into the graph, potentially routing users through a wall.
 - Deleting is safe: Turf `nearestPointOnLine` will never crash on the remaining valid paths, and graphology will build a clean edge-set.
@@ -23,6 +28,7 @@
 **Result**: Cleaned file saved as `nsu_indoor_map_merged_clean.geojson` (147 features, was 149).
 
 ### 2026-06-21 — accessible_via_path strategy
+
 Field is `null` on all POIs in the source GeoJSON.
 
 **Decision: Leave null for MVP.**
@@ -30,12 +36,15 @@ Field is `null` on all POIs in the source GeoJSON.
 Routing for Phase 2 will use Turf `nearestPointOnLine` to snap any POI or QR-decoded position onto the nearest path segment at runtime. The `accessible_via_path` field is semantically dead weight for now but preserved in schema for a future admin tool that could explicitly link POIs to specific corridor segments (useful for complex indoor geometries where nearest-path snap could pick the wrong corridor).
 
 ### 2026-06-21 — Graph node keying
+
 Transit nodes (lifts/staircases) at the same physical XY on L1 and L2 (e.g. `nac_lift_1_L1` and `nac_lift_1_L2` both at `[90.4257158, 23.8154311]`) must be keyed by `node_id` string, NOT by coordinate string. Coordinate-based dedup would collapse vertical edges into a single node, breaking multi-floor routing.
 
 ### 2026-06-21 — Vite scaffold wiped root
+
 `create-vite --overwrite` on the project root deleted `.ai/` and the original GeoJSON. All `.ai/` files recreated from memory. The original GeoJSON is not restored (not needed — only the clean version is used going forward). `AGENTS.md` also lost — should be recreated if needed.
 
 ## Supabase Schema Notes
+
 - Table: `map_features` — `feature_id` (unique), `geometry` (jsonb), `properties` (jsonb), `feature_type`, `level`
 - RLS: SELECT open to `public`; INSERT/UPDATE/DELETE gated on `admin_allowlist` table
 - RPC: `get_feature_collection(p_level integer DEFAULT NULL)` → returns GeoJSON FeatureCollection
@@ -44,15 +53,18 @@ Transit nodes (lifts/staircases) at the same physical XY on L1 and L2 (e.g. `nac
 ## Single Floor Routing Implementation
 
 ### Snapping & Dijkstra Integration
+
 - **Snapping**: Snaps coordinates from URL params (`lat`, `lng`) to the nearest path on the active floor level using Turf.js `nearestPointOnLine`. Snapped coordinates are stored as `route.origin`.
 - **Graph construction**: In `lib/routing.ts`, we construct a graphology graph dynamically using path features on the active level.
 - **Shortest Path**: We execute bidirectional Dijkstra pathfinding using `graphology-shortest-path/dijkstra` from `route.origin` to the selected destination POI.
 
 ### Graphology Directed vs. Undirected Edges Bug (Fixed)
+
 - **Problem**: When constructing the graph, we used `g.addEdge()` which creates a directed edge. Since corridor paths are bidirectional, pathfinding would fail (returning an empty route) if the target direction required traversing an edge backwards relative to its digitized orientation.
 - **Fix**: Replaced `addEdge`, `hasEdge`, and `dropEdge` with `addUndirectedEdge`, `hasUndirectedEdge`, and `dropUndirectedEdge` respectively. The graph is now correctly built as an undirected network, allowing Dijkstra to navigate in either direction.
 
 ### Visual Map Stack
+
 - Building footprints are drawn under paths and markers.
 - Corridor path meshes are hidden by default and only visible when `isAdminMode` is enabled.
 - Snap lines are rendered as dotted blue lines connecting the raw visitor location (You) to the snapped path position. The snap line only renders when routing to a destination is active.
@@ -65,20 +77,24 @@ Transit nodes (lifts/staircases) at the same physical XY on L1 and L2 (e.g. `nac
 - The "You" starting marker is styled as a solid blue circle with a thick white border, glowing blue animation, and set to the highest z-index (9999) to prevent it from rendering under other map elements.
 
 ### 2026-06-21 — Snapping Segment-splitting Intersection Bug (Fixed)
+
 - **Problem**: Snapped origin and destination nodes were being created in the graph but remained completely isolated (size 1 components with 0 neighbors). Dijkstra would silently return empty routes. This was because `getOrCreateNodeKey(snapCoords)` was called before checking `g.hasNode(snapKey)`. Since `getOrCreateNodeKey` immediately adds the node to the graph when it doesn't exist, `g.hasNode(snapKey)` always returned `true` immediately after, causing the snapping function to return early and bypass the segment-splitting/edge-adding logic entirely.
 - **Fix**: Replaced the direct `getOrCreateNodeKey` check with a manual distance check against `nodeCoords` first. If no existing node is within 10 cm, we generate `snapKey` and proceed to split the segment and add the edges. Snapped nodes now correctly connect to the path network, and routing works flawlessly.
 
 ### 2026-06-21 — Start Snap Line Conditional Rendering
+
 - **Problem**: The dashed start snap line was visible on initial mount even when no destination was selected, creating visual clutter.
 - **Fix**: Updated `startSnapLineData` `useMemo` in `MapCanvas.tsx` to return `null` if `route.destination` is not set or `route.routeCoordinates` is empty. The snap line now renders only when active routing is underway.
 
 ### 2026-06-21 — Overlaid Multi-floor Path Routing
+
 - **Problem**: Moving between floors required user interaction with floating "Continue to L2" buttons, and routes on inactive floors were hidden.
 - **Fix**: Wiped transition buttons. Plotted active floor route as a solid blue (#2563eb) line without borders. Plotted inactive floor route segments as dashed violet (#8b5cf6) lines overlaid on the current level. Updated markersData to include cross-floor destination POIs, and styled cross-floor markers (and inactive You marker) with 60% opacity and a floor suffix (e.g. `(L2)`). Hidden all non-destination POI pin icons during active routing, keeping only their text labels visible.
 
 ### 2026-06-24 — Multi-floor Routing Redesign (Staircase Strategy)
 
 **Problem**: Three interrelated rendering bugs:
+
 1. Two lines going in different directions from the start point — one from `startSnapLineData` and another from `staircaseConnectorData`.
 2. The route on inactive floors showed as purple dashed but had no visual continuity from the staircase transition point.
 3. A phantom `staircaseConnectorData` useMemo in MapCanvas drew a line from the "last route coord on active level" to the nearest transit — this produced a duplicate/conflicting line.
@@ -86,30 +102,32 @@ Transit nodes (lifts/staircases) at the same physical XY on L1 and L2 (e.g. `nac
 **Root Cause**: The old routing used Dijkstra across all floors simultaneously with transit edges, which let the router pick any path through the graph including non-staircase nodes. The `staircaseConnectorData` was a post-hoc hack to visually extend the route to the staircase — but since Dijkstra already handled the staircase edge, this produced a double-line.
 
 **Fix (2026-06-24)**:
+
 - **routing.ts completely rewritten** with explicit 3-segment architecture:
-  1. Build independent floor graphs for origin and dest levels
-  2. Find nearest transit node (lift) on origin level — treated as staircase access point
-  3. Dijkstra: origin → nearest transit (origin level)
-  4. Cross-floor jump point appended
-  5. Dijkstra: transit (dest level) → destination
+    1. Build independent floor graphs for origin and dest levels
+    2. Find nearest transit node (lift) on origin level — treated as staircase access point
+    3. Dijkstra: origin → nearest transit (origin level)
+    4. Cross-floor jump point appended
+    5. Dijkstra: transit (dest level) → destination
 - Route output: `[...seg1, stairOnOrigin, stairOnDest, ...seg2]` with full level tags
 - **`staircaseConnectorData` useMemo DELETED** from MapCanvas
 - **`routeData` and `inactiveRouteData`** rewritten to use `buildSegments()` helper that splits route into multiple contiguous same-level LineStrings — correctly handles the case where two separate segments of the same level (origin→stair AND stair→dest if same-floor fallback) both render
 
-**Transit data note**: GeoJSON has BOTH `transit_type === 'staircase'` AND `transit_type === 'lift'` entries. Routing exclusively uses `staircase` transit nodes (lifts excluded). Staircase pairs are resolved via the `connects_to` array (authoritative, not proximity). 
+**Transit data note**: GeoJSON has BOTH `transit_type === 'staircase'` AND `transit_type === 'lift'` entries. Routing exclusively uses `staircase` transit nodes (lifts excluded). Staircase pairs are resolved via the `connects_to` array (authoritative, not proximity).
 
 **Optimal staircase selection**: ALL valid staircase pairs between floors are evaluated. For each pair, independent floor graphs are built and Dijkstra cost (origin→stair + stair→dest) is computed. The minimum-cost pair wins. This ensures the truly shortest walking route, not just the geographically closest staircase.
- 
- **Snap lines**:
- - `startSnapLineData`: rawOrigin → routeCoords[0] (always rendered with start-snap style)
- - `destSnapLineData`: routeCoords[-1] → destCoords (rendered purple dashed if dest is on different floor from active level)
- 
- 
+
+**Snap lines**:
+
+- `startSnapLineData`: rawOrigin → routeCoords[0] (always rendered with start-snap style)
+- `destSnapLineData`: routeCoords[-1] → destCoords (rendered purple dashed if dest is on different floor from active level)
+
 ### 2026-06-24 — Curved Route Path Joins and Snap Line Integration
 
 **Problem**: The route path lines had sharp joints at corners. In addition, the snap lines connecting the user (You) to the corridor network and the corridor network to the destination POI were separate lines, which met the main route at sharp angles and looked disconnected/discontinuous. Furthermore, in multi-floor routing, corners connecting staircase transitions (vertical stairs to level corridors) remained sharp.
 
 **Fix**:
+
 1. **Merged Snap Lines into Route**: Integrated the raw origin (`originCoords`) and raw destination (`destCoords`) directly into the main `route.routeCoordinates` array inside `computeShortestPath` (in same-floor and multi-floor routing segments).
 2. **Curved Corner Smoothing**: Implemented a `smoothPath` helper in `routing.ts` using quadratic Bezier curve corner-rounding. It cuts corners within each level-specific path segment (scaling the cut distance based on segment length up to ~3 meters) and generates sampled Bezier curve points to round the corner.
 3. **Staircase Transition Smoothing**: Appended the raw staircase coordinates `bestStairOrigin` and `bestStairDest` to `fullSeg1` and `fullSeg2` respectively, before passing them to `smoothPath`. This allows the corner-rounding algorithm to curve the transitions between stair entry/exit points and the level corridor paths, resolving all remaining sharp corners at multi-floor joins.
@@ -123,6 +141,7 @@ Transit nodes (lifts/staircases) at the same physical XY on L1 and L2 (e.g. `nac
 **Decision**: Implement a smooth, client-side route drawing animation.
 
 **Implementation**:
+
 1. **Distance-based Interpolation**: Rather than advancing the animation frame-by-frame on a fixed count of path vertices (which causes speed spikes on tight curves with dense points), we compute cumulative haversine distances along the full path. The path grows at a constant linear speed (approx 40 meters/sec) over a duration bounded between 1.5 and 4.0 seconds.
 2. **Smooth Growing State**: Local component state `animatedCoords` tracks the coordinates of the path traversed up to the current frame time, with the final segment coordinate interpolated dynamically.
 3. **Seamless Multi-Floor Continuity**: Since `buildSegments()` operates directly on `animatedCoords`, the active and inactive floor segments grow in perfect sync as if they are a single continuous line, avoiding simultaneous segment draws or long pauses.
@@ -138,6 +157,7 @@ Transit nodes (lifts/staircases) at the same physical XY on L1 and L2 (e.g. `nac
 **Problem**: The selected floor level (activeLevel) was not persisted in the URL query parameters, so refreshes or shared links reverted the map view to the default floor.
 
 **Fix**:
+
 1. **Load State**: Modified initial load `useEffect` in `App.tsx` to parse `level` query parameter and call `setActiveLevel(lvl)` if valid (1 or 2).
 2. **Store to URL Sync**: Modified state-to-URL sync `useEffect` in `App.tsx` to always append `level` query parameter and stopped deleting it on start selection. Persists active level seamlessly alongside route selections.
 
@@ -146,6 +166,17 @@ Transit nodes (lifts/staircases) at the same physical XY on L1 and L2 (e.g. `nac
 **Problem**: Reversing the route origin and destination required clearing and re-entering coordinates, which was tedious and lacked shortcut capabilities.
 
 **Fix**:
+
 1. **Swap Button UI**: Plotted a styled circular `ArrowUpDown` swap button between the start and destination search inputs in `App.tsx`.
 2. **Swap Logic**: Implemented `handleFlip` in `App.tsx` to parse current start and destination details (including matching coordinates to POI names/IDs or coordinate strings) and swap them in the store and inputs. Handles blank states smoothly.
 3. **Animation Replay**: Since swapping reverses the coordinate ordering (e.g. $[A, \dots, B]$ to $[B, \dots, A]$), the new route path naturally triggers the path growing grow animation from the new starting point.
+
+### 2026-06-26 — Mobile search sheet collapse restored
+
+**Problem**: Mobile search panel could not reliably collapse with the arrow, and the floating compact pill logic had broken JSX after UI changes.
+
+**Fix**:
+
+1. Restored the compact floating search pill render block in `src/App.tsx` and separated the admin banner markup into its own conditional.
+2. Centralized mobile sheet state via `setSheetState` and `sheetInteractOpen` so arrow taps and gesture interactions consistently toggle the sheet.
+3. Added a restore pill for hidden route details and preserved manual collapse state while typing in the destination input.
