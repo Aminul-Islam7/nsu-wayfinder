@@ -40,7 +40,7 @@ const INITIAL_VIEW_STATE = {
 const MAP_STYLE_LIGHT = 'https://basemaps.cartocdn.com/gl/positron-gl-style/style.json';
 const MAP_STYLE_DARK = 'https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json';
 
-export const MapCanvas: React.FC<MapCanvasProps> = ({ isDark: isDarkMode, pickingFromMap = false, heading = null, gpsActive = false }) => {
+export const MapCanvas: React.FC<MapCanvasProps> = ({ isDark: isDarkMode, pickingFromMap = false, gpsActive = false }) => {
 	const { activeLevel, features, isLoading, error, fetchFeatures, route, setRouteCoordinates } = useStore();
 
 	// Fetch features on mount

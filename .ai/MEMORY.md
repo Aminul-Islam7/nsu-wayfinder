@@ -9,6 +9,7 @@
 - All 147 clean features seeded into `map_features`.
 - 2026-06-27: Removed the developer-only logs button, added a polished initial loading experience, cleaned the search-card header so it no longer shows the NSU Wayfinder label, and compacted the floor/theme controls into a slimmer top-right bar.
 - 2026-06-27: Added a stronger visual treatment to the floating recenter and route-restore controls so primary actions feel clearer and more premium on mobile and desktop.
+- 2026-06-27: Fixed CSS syntax error in index.css and resolved TypeScript compile error for unused heading prop in MapCanvas.tsx.
 
 ## Technical Decisions & Lessons Learned
 
@@ -180,3 +181,14 @@ Transit nodes (lifts/staircases) at the same physical XY on L1 and L2 (e.g. `nac
 1. Restored the compact floating search pill render block in `src/App.tsx` and separated the admin banner markup into its own conditional.
 2. Centralized mobile sheet state via `setSheetState` and `sheetInteractOpen` so arrow taps and gesture interactions consistently toggle the sheet.
 3. Added a restore pill for hidden route details and preserved manual collapse state while typing in the destination input.
+
+### 2026-06-27 — CSS Syntax & TypeScript Compile Fixes
+
+**Problem**: 
+- CSS syntax error in `src/index.css` due to stray/orphaned `:root` properties (`--border`, `--input`, `--ring`, `--radius`) outside the opening block declaration, triggering a Vite pre-transform build failure.
+- TypeScript TS6133 compile error in `src/components/map/MapCanvas.tsx` because `heading` prop was destructured but not referenced in the component.
+
+**Fix**:
+- Moved CSS custom properties inside the primary light-mode `:root` block and deleted the orphaned block at lines 136-140 in `src/index.css`.
+- Removed `heading` from destructured arguments in `MapCanvas.tsx` component declaration.
+

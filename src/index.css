@@ -48,6 +48,10 @@
 	--accent: #f1f1f4;
 	--accent-foreground: #1d1d1f;
 	--destructive: #ff3b30;
+	--border: rgba(0, 0, 0, 0.09);
+	--input: rgba(0, 0, 0, 0.06);
+	--ring: #2563eb;
+	--radius: 0.75rem;
 }
 
 @keyframes pulse-ring {
@@ -131,12 +135,6 @@ button:active:not(:disabled) {
 
 .glow-ping {
 	animation: glow-ping 1.6s cubic-bezier(0, 0, 0.2, 1) infinite;
-}
-
-	--border: rgba(0, 0, 0, 0.09);
-	--input: rgba(0, 0, 0, 0.06);
-	--ring: #2563eb;
-	--radius: 0.75rem;
 }
 
 /* ── Dark mode ───────────────────────────────────────────────── */
