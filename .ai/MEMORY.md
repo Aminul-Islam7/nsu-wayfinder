@@ -10,6 +10,7 @@
 - 2026-06-27: Removed the developer-only logs button, added a polished initial loading experience, cleaned the search-card header so it no longer shows the NSU Wayfinder label, and compacted the floor/theme controls into a slimmer top-right bar.
 - 2026-06-27: Added a stronger visual treatment to the floating recenter and route-restore controls so primary actions feel clearer and more premium on mobile and desktop.
 - 2026-06-27: Fixed CSS syntax error in index.css and resolved TypeScript compile error for unused heading prop in MapCanvas.tsx.
+- 2026-06-28: Simplified search panel overlay layout. Removed RECENTs, Quick Places, Favorites, sensor/gps-tracking, and app logo to satisfy design conciseness requests.
 
 ## Technical Decisions & Lessons Learned
 

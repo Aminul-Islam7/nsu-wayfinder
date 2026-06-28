@@ -1007,155 +1007,34 @@ export default function App() {
 						</div>
 					)}
 					{/* Brand header */}
-					<div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '6px 12px 10px' }}>
-						<div
+					<div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', padding: '6px 12px 6px' }}>
+						<button
+							title={sheetVisible ? 'Minimize search panel' : 'Open search panel'}
+							onClick={() => setSheetState(!sheetVisible, !sheetVisible)}
 							style={{
-								width: 28,
-								height: 28,
-								borderRadius: 8,
-								flexShrink: 0,
-								background: c.primary,
-								display: 'flex',
+								display: 'inline-flex',
 								alignItems: 'center',
-								justifyContent: 'center',
+								gap: 6,
+								padding: '6px 10px',
+								borderRadius: 999,
+								border: 'none',
+								cursor: 'pointer',
+								background: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)',
+								color: c.text,
+								fontSize: 11,
+								fontWeight: 700,
+								transition: 'all 200ms cubic-bezier(0.2,0,0.2,1)',
+							}}
+							onMouseEnter={(e) => {
+								e.currentTarget.style.background = isDark ? 'rgba(255,255,255,0.12)' : 'rgba(0,0,0,0.08)';
+							}}
+							onMouseLeave={(e) => {
+								e.currentTarget.style.background = isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)';
 							}}
 						>
-							<MapPin size={14} color="#fff" />
-						</div>
-
-						{/* Tracking pill + sheet toggle — right-aligned */}
-						<div style={{ marginLeft: 'auto', display: 'flex', gap: 8, alignItems: 'center' }}>
-							<button
-								title={trackingEnabled ? (gpsActive ? 'GPS active' : 'Sensor tracking (GPS unavailable)') : 'Start location tracking'}
-								onClick={() => setTrackingEnabled(!trackingEnabled)}
-								style={{
-									display: 'flex',
-									alignItems: 'center',
-									gap: 5,
-									padding: '4px 8px',
-									borderRadius: 20,
-									border: 'none',
-									cursor: 'pointer',
-									background: trackingEnabled ? (gpsActive ? 'rgba(16,185,129,0.15)' : 'rgba(37,99,235,0.12)') : isDark ? 'rgba(255,255,255,0.07)' : 'rgba(0,0,0,0.05)',
-									transition: 'all 200ms cubic-bezier(0.2,0,0.2,1)',
-								}}
-								onMouseEnter={(e) => {
-									e.currentTarget.style.background = trackingEnabled ? (gpsActive ? 'rgba(16,185,129,0.22)' : 'rgba(37,99,235,0.18)') : isDark ? 'rgba(255,255,255,0.10)' : 'rgba(0,0,0,0.08)';
-								}}
-								onMouseLeave={(e) => {
-									e.currentTarget.style.background = trackingEnabled ? (gpsActive ? 'rgba(16,185,129,0.15)' : 'rgba(37,99,235,0.12)') : isDark ? 'rgba(255,255,255,0.07)' : 'rgba(0,0,0,0.05)';
-								}}
-							>
-								<Radio size={11} color={trackingEnabled ? (gpsActive ? '#10b981' : '#2563eb') : faint} style={{ animation: trackingEnabled ? 'glow-ping 2s ease infinite' : 'none' }} />
-								<span
-									style={{
-										fontSize: 10,
-										fontWeight: 600,
-										color: trackingEnabled ? (gpsActive ? '#10b981' : '#2563eb') : faint,
-									}}
-								>
-									{trackingEnabled ? (gpsActive ? 'GPS' : 'Sensor') : 'Tracking off'}
-								</span>
-							</button>
-							<button
-								title={sheetVisible ? 'Minimize search panel' : 'Open search panel'}
-								onClick={() => setSheetState(!sheetVisible, !sheetVisible)}
-								style={{
-									display: 'inline-flex',
-									alignItems: 'center',
-									gap: 6,
-									padding: '6px 10px',
-									borderRadius: 999,
-									border: 'none',
-									cursor: 'pointer',
-									background: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)',
-									color: c.text,
-									fontSize: 11,
-									fontWeight: 700,
-									transition: 'all 200ms cubic-bezier(0.2,0,0.2,1)',
-								}}
-								onMouseEnter={(e) => {
-									e.currentTarget.style.background = isDark ? 'rgba(255,255,255,0.12)' : 'rgba(0,0,0,0.08)';
-								}}
-								onMouseLeave={(e) => {
-									e.currentTarget.style.background = isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)';
-								}}
-							>
-								<ChevronRight size={14} style={{ transform: `rotate(${sheetVisible ? 90 : -90}deg)`, transition: 'transform 200ms cubic-bezier(0.2,0,0.2,1)' }} />
-								{sheetVisible ? 'Hide' : 'Search'}
-							</button>
-						</div>
-					</div>
-
-					{/* Quick actions */}
-					<div style={{ display: 'flex', flexDirection: 'column', gap: 8, padding: '0 12px 8px' }}>
-						<div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
-							<span style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: faint }}>Quick places</span>
-							{favoriteFeatureObjects.length > 0 && <span style={{ fontSize: 11, color: sub }}>{favoriteFeatureObjects.length} saved</span>}
-						</div>
-						<div style={{ display: 'flex', gap: 8, overflowX: 'auto', paddingBottom: 2, scrollbarWidth: 'none' }}>
-							{quickDestinations.map((feature: any) => (
-								<button
-									key={feature.properties?._feature_id || feature.properties?.node_id}
-									onClick={() => selectFeatureDestination(feature)}
-									style={{
-										...glassStyle(isDark, {
-											padding: '8px 12px',
-											borderRadius: 999,
-											boxShadow: 'none',
-										}),
-										border: 'none',
-										cursor: 'pointer',
-										whiteSpace: 'nowrap',
-										fontSize: 12,
-										fontWeight: 600,
-										color: text,
-									}}
-								>
-									{feature.properties?.name || 'Place'}
-								</button>
-							))}
-						</div>
-						{favoriteFeatureObjects.length > 0 && (
-							<div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-								<span style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: faint }}>Favorites</span>
-								<div style={{ display: 'flex', gap: 8, overflowX: 'auto', paddingBottom: 2, scrollbarWidth: 'none' }}>
-									{favoriteFeatureObjects.map((feature: any) => (
-										<FavoriteChip key={feature.properties?._feature_id || feature.properties?.node_id} feature={feature} />
-									))}
-								</div>
-							</div>
-						)}
-						{recentFeatureObjects.length > 0 && (
-							<div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-								<span style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: faint }}>Recent</span>
-								<div style={{ display: 'flex', gap: 8, overflowX: 'auto', paddingBottom: 2, scrollbarWidth: 'none' }}>
-									{recentFeatureObjects.map((feature: any) => (
-										<button
-											key={feature.properties?._feature_id || feature.properties?.node_id}
-											onClick={() => selectFeatureDestination(feature)}
-											style={{
-												display: 'inline-flex',
-												alignItems: 'center',
-												gap: 8,
-												padding: '8px 12px',
-												borderRadius: 999,
-												border: 'none',
-												cursor: 'pointer',
-												background: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.03)',
-												color: text,
-												whiteSpace: 'nowrap',
-												fontSize: 12,
-												fontWeight: 600,
-											}}
-										>
-											<Clock size={13} color={sub} />
-											<span style={{ maxWidth: 120, overflow: 'hidden', textOverflow: 'ellipsis' }}>{feature.properties?.name || 'Place'}</span>
-										</button>
-									))}
-								</div>
-							</div>
-						)}
+							<ChevronRight size={14} style={{ transform: `rotate(${sheetVisible ? 90 : -90}deg)`, transition: 'transform 200ms cubic-bezier(0.2,0,0.2,1)' }} />
+							{sheetVisible ? 'Hide' : 'Search'}
+						</button>
 					</div>
 
 					{/* ── Origin input row ───────────────────────────────────── */}
@@ -1468,46 +1347,7 @@ export default function App() {
 										setDestOpen(false);
 									}}
 								/>
-								{recentFeatureObjects.length > 0 && (
-									<div style={{ padding: '4px 10px 8px' }}>
-										<div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: faint, margin: '4px 2px 8px' }}>Recent destinations</div>
-										<div style={{ display: 'flex', gap: 8, overflowX: 'auto', scrollbarWidth: 'none' }}>
-											{recentFeatureObjects.map((feature: any) => (
-												<button
-													key={feature.properties?._feature_id || feature.properties?.node_id}
-													onClick={() => selectFeatureDestination(feature)}
-													style={{
-														display: 'inline-flex',
-														alignItems: 'center',
-														gap: 6,
-														padding: '8px 10px',
-														borderRadius: 999,
-														border: 'none',
-														cursor: 'pointer',
-														background: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)',
-														color: text,
-														whiteSpace: 'nowrap',
-														fontSize: 12,
-														fontWeight: 600,
-													}}
-												>
-													<Clock size={12} color={sub} />
-													<span>{feature.properties?.name || 'Place'}</span>
-												</button>
-											))}
-										</div>
-									</div>
-								)}
-								{favoriteFeatureObjects.length > 0 && (
-									<div style={{ padding: '4px 10px 8px' }}>
-										<div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: faint, margin: '4px 2px 8px' }}>Favorites</div>
-										<div style={{ display: 'flex', gap: 8, overflowX: 'auto', scrollbarWidth: 'none' }}>
-											{favoriteFeatureObjects.map((feature: any) => (
-												<FavoriteChip key={feature.properties?._feature_id || feature.properties?.node_id} feature={feature} />
-											))}
-										</div>
-									</div>
-								)}
+
 								{filteredDest.map((poi, i) => (
 									<DropItem key={poi.properties?._feature_id} name={poi.properties?.name || ''} sub={`${poi.properties?.building} · Level ${poi.properties?.level}`} type={poi.properties?.type} category={poi.properties?.category} isActive={destIdx === i} onHover={() => setDestIdx(i)} onClick={() => selectDest(poi)} />
 								))}

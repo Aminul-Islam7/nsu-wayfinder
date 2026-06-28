@@ -18,6 +18,7 @@
 - [/] **Phase 4: Visitor UX Polish**
     - Destination search, turn-by-turn bottom sheet, dark mode, responsive UI, curved route smoothing.
     - Refined floating route actions with clearer recenter and restore affordances.
+    - Simplified search panel overlay by removing RECENTs, Quick Places, Favorites, sensor/gps-tracking, and app logo for a more concise UI.
 
 - [ ] **Phase 5: Admin Tools**
     - Auth gate setup.
