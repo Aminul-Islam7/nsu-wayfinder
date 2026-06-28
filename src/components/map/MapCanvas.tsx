@@ -4,7 +4,7 @@ import type { MapMouseEvent } from 'react-map-gl/maplibre';
 import maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { useStore } from '../../store/useStore';
-import { GraduationCap, MapPin, ArrowUpDown, Info } from 'lucide-react';
+import { GraduationCap, MapPin, ArrowUpDown, Info, Footprints } from 'lucide-react';
 import { computeShortestPath } from '../../lib/routing';
 
 interface MapCanvasProps {
@@ -610,23 +610,26 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
 						>
 							<div
 								style={{
-									background: isDarkMode ? 'rgba(28, 28, 30, 0.72)' : 'rgba(255, 255, 255, 0.72)',
+									background: 'rgba(37, 99, 235, 0.88)',
 									backdropFilter: 'blur(20px) saturate(190%)',
 									WebkitBackdropFilter: 'blur(20px) saturate(190%)',
-									border: `1px solid ${isDarkMode ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.06)'}`,
+									border: '1px solid rgba(255, 255, 255, 0.18)',
 									borderRadius: '8px',
 									padding: '5px 9px',
-									boxShadow: '0 4px 12px rgba(0, 0, 0, 0.08)',
+									boxShadow: '0 4px 12px rgba(37, 99, 235, 0.25)',
 									display: 'flex',
 									flexDirection: 'column',
 									alignItems: 'center',
-									gap: '1px',
+									gap: '2px',
 								}}
 							>
-								<span style={{ fontSize: '11px', fontWeight: 800, color: isDarkMode ? '#ffffff' : '#1d1d1f', lineHeight: 1.1 }}>
-									{routeStats.timeStr}
-								</span>
-								<span style={{ fontSize: '9px', fontWeight: 600, color: isDarkMode ? '#aeaeb2' : '#6e6e73', lineHeight: 1.1 }}>
+								<div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+									<Footprints size={11} color="#ffffff" style={{ opacity: 0.95 }} />
+									<span style={{ fontSize: '11px', fontWeight: 800, color: '#ffffff', lineHeight: 1.1 }}>
+										{routeStats.timeStr}
+									</span>
+								</div>
+								<span style={{ fontSize: '9px', fontWeight: 600, color: 'rgba(255, 255, 255, 0.8)', lineHeight: 1.1 }}>
 									{routeStats.distStr}
 								</span>
 							</div>
@@ -636,7 +639,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
 									height: 0,
 									borderLeft: '5px solid transparent',
 									borderRight: '5px solid transparent',
-									borderTop: `5px solid ${isDarkMode ? 'rgba(28, 28, 30, 0.72)' : 'rgba(255, 255, 255, 0.72)'}`,
+									borderTop: '5px solid rgba(37, 99, 235, 0.88)',
 									marginTop: '-1px',
 									filter: 'drop-shadow(0 1px 1px rgba(0,0,0,0.06))',
 								}}
