@@ -371,6 +371,6 @@ Transit nodes (lifts/staircases) at the same physical XY on L1 and L2 (e.g. `nac
 - Filtered control icons in dark mode with `filter: invert(1) brightness(1.5)` for high visibility, and hid them on screen widths <= `768px` (mobile).
 - Placed a transparent glassmorphic speech bubble in `MapCanvas.tsx` at the middle coordinate of the route when animation finishes.
 - Styled the speech bubble with a blue background, white text, and a custom walking person SVG directions icon on the left of a left-aligned stats layout.
-- Restored Search Panel route details time render back to original layout configured as an unrounded singular text string (e.g. `1 min 5 sec`, `2 min`, `55 sec`).
+- Restored Search Panel route details time render back to original layout configured as an unrounded singular text string (e.g. `1 min 5 sec`, `2 min`, `55 sec`) with `min`/`sec` labels sized smaller than the values.
 - Configured speech bubble time string with custom 10s rounding: rounds up/down to whole minutes (e.g. `2 min`) if within 10s of a whole minute, otherwise displays short combined format (e.g. `2 m 14 s`), and displays seconds-only (e.g. `35 sec`) if minutes are 0.
 - Polished bubble: Set gap between icon and stats to `6px`, increased distance text font size to `11px`, and increased chevron size to `7px`.
