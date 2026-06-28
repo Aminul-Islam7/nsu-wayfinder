@@ -13,6 +13,8 @@
 - 2026-06-28: Simplified search panel overlay layout. Removed RECENTs, Quick Places, Favorites, sensor/gps-tracking, and app logo to satisfy design conciseness requests.
 - 2026-06-28: Refactored mobile level selector to be horizontal, scrollable, and concise at the bottom of the screen (B3 to L11). Added `.no-scrollbar` to hide scrollbars.
 - 2026-06-28: Removed Route Details stats in search panel for mobile view to prevent obscuring map.
+- 2026-06-28: Collapsed search panel to a single-line pill when route is active on mobile. Added touchstart handler to support outside click collapse on mobile, and removed the expand/flip button from the collapsed card.
+- 2026-06-28: Added building and floor information below place names in inputs (when selected) and in the collapsed mobile pill layout.
 
 ## Technical Decisions & Lessons Learned
 

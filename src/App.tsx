@@ -1,11 +1,12 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { MapCanvas } from './components/map/MapCanvas'
+import { QrScanner } from './components/QrScanner'
 import { useStore } from './store/useStore'
 import type { Level } from './store/useStore'
 import {
   Search, X, MapPin, GraduationCap,
   Sun, Moon, ArrowUpDown, Clock,
-  ChevronRight, AlertTriangle, Footprints
+  ChevronRight, AlertTriangle, Footprints, QrCode
 } from 'lucide-react'
 
 const StairsIcon = ({ size = 14 }: { size?: number }) => (
@@ -147,9 +148,94 @@ export default function App() {
   const [originOpen,  setOriginOpen]  = useState(false)
   const [originIdx,   setOriginIdx]   = useState(-1)
   const [pickMode,    setPickMode]    = useState<'origin' | 'dest' | false>(false)
+  const [panelCollapsed, setPanelCollapsed] = useState(false)
+  const [showQrScanner,  setShowQrScanner]  = useState(false)
 
   const panelRef = useRef<HTMLDivElement>(null)
   const levelRefs = useRef<Record<number, HTMLButtonElement | null>>({})
+  const hasRouteRef = useRef(false)
+
+  // ── QR result handler ─────────────────────────────────────────────
+  const handleQrResult = useCallback((result: { startParam?: string; destParam?: string; levelParam?: string; latParam?: string; lngParam?: string; rawUrl: string }) => {
+    setShowQrScanner(false)
+    if (!features.length) return
+
+    const { startParam, destParam, levelParam, latParam, lngParam } = result
+
+    if (startParam) {
+      if (startParam.startsWith('coord:')) {
+        const parts = startParam.replace('coord:', '').split(',')
+        if (parts.length >= 3) {
+          const lng = parseFloat(parts[0])
+          const lat = parseFloat(parts[1])
+          const lvl = parseInt(parts[2]) as Level
+          setRawOrigin([lng, lat])
+          setOrigin([lng, lat], lvl)
+          setOriginQuery(`${lat.toFixed(5)}, ${lng.toFixed(5)}`)
+          setActiveLevel(lvl)
+        }
+      } else {
+        const p = features.find(f => f.properties?._feature_id === startParam)
+        if (p && p.geometry?.coordinates) {
+          const [lng, lat] = p.geometry.coordinates
+          const lvl = (p.properties?.level || 1) as Level
+          setRawOrigin([lng, lat])
+          setOrigin([lng, lat], lvl)
+          setOriginQuery(p.properties?.name || '')
+          setActiveLevel(lvl)
+        }
+      }
+    } else if (latParam && lngParam) {
+      const rawLat = parseFloat(latParam)
+      const rawLng = parseFloat(lngParam)
+      const lvl = levelParam ? (parseInt(levelParam) as Level) : (1 as Level)
+      setRawOrigin([rawLng, rawLat])
+      setOrigin([rawLng, rawLat], lvl)
+      setOriginQuery(`${rawLat.toFixed(5)}, ${rawLng.toFixed(5)}`)
+      setActiveLevel(lvl)
+    }
+
+    if (destParam) {
+      if (destParam.startsWith('coord:')) {
+        const parts = destParam.replace('coord:', '').split(',')
+        if (parts.length >= 3) {
+          const lng = parseFloat(parts[0])
+          const lat = parseFloat(parts[1])
+          setDestination(destParam)
+          setDestQuery(`${lat.toFixed(5)}, ${lng.toFixed(5)}`)
+          setActiveLevel(parseInt(parts[2]) as Level)
+        }
+      } else {
+        const p = features.find(f => f.properties?._feature_id === destParam)
+        if (p) {
+          setDestination(destParam)
+          setDestQuery(p.properties?.name || '')
+          setActiveLevel((p.properties?.level || 1) as Level)
+        }
+      }
+    }
+
+    if (levelParam && !startParam && !latParam && !destParam) {
+      const lvl = parseInt(levelParam, 10) as Level
+      if (!isNaN(lvl) && ALL_LEVELS.some(l => l.value === lvl)) setActiveLevel(lvl)
+    }
+  }, [features, setRawOrigin, setOrigin, setDestination, setActiveLevel])
+
+  const originDetails = useMemo(() => {
+    const startCoords = route.rawOrigin || route.origin
+    if (!startCoords) return null
+    return features.find(
+      f => f.geometry?.type === 'Point' &&
+      f.geometry.coordinates[0] === startCoords[0] &&
+      f.geometry.coordinates[1] === startCoords[1] &&
+      f.properties?.level === route.originLevel
+    )
+  }, [route.rawOrigin, route.origin, route.originLevel, features])
+
+  const destDetails = useMemo(() => {
+    if (!route.destination || route.destination.startsWith('coord:')) return null
+    return features.find(f => f.properties?._feature_id === route.destination)
+  }, [route.destination, features])
 
   // ── Auto-scroll active level into view ────────────────────────────
   useEffect(() => {
@@ -159,8 +245,6 @@ export default function App() {
     }
   }, [activeLevel])
 
-
-
   // ── Sync labels ──────────────────────────────────────────────────
   useEffect(() => {
     if (!route.destination) { setDestQuery(''); return }
@@ -169,20 +253,24 @@ export default function App() {
     if (f) setDestQuery(f.properties?.name || '')
   }, [route.destination, features])
 
-  // (originQuery clearing moved to the clear button onClick explicitly to avoid side-effects)
-
   // ── Click-outside close ──────────────────────────────────────────
   useEffect(() => {
-    const fn = (e: MouseEvent) => {
+    const fn = (e: Event) => {
       if (panelRef.current && !panelRef.current.contains(e.target as Node)) {
         setDestOpen(false); setOriginOpen(false)
+        if (hasRouteRef.current) {
+          setPanelCollapsed(true)
+        }
       }
     }
     document.addEventListener('mousedown', fn)
-    return () => document.removeEventListener('mousedown', fn)
+    document.addEventListener('touchstart', fn)
+    return () => {
+      document.removeEventListener('mousedown', fn)
+      document.removeEventListener('touchstart', fn)
+    }
   }, [])
 
-  // ── Sync URL -> Store state on initial load ─────────────────────
   const urlLoadedRef = useRef(false)
   useEffect(() => {
     if (isLoading || features.length === 0 || urlLoadedRef.current) return
@@ -424,6 +512,18 @@ export default function App() {
   const hasRoute  = !!(route.destination && route.routeCoordinates.length > 0)
   const hasOrigin = !!(route.rawOrigin || route.origin)
 
+  // Keep ref in sync for use in click-outside handler (avoids stale closure)
+  hasRouteRef.current = hasRoute
+
+  // ── Auto-collapse panel on mobile when route renders ─────────────
+  useEffect(() => {
+    if (isMobile && hasRoute) {
+      setPanelCollapsed(true)
+    } else {
+      setPanelCollapsed(false)
+    }
+  }, [isMobile, hasRoute])
+
   // ── Keyboard nav helpers ─────────────────────────────────────────
   const onDestKey = (e: React.KeyboardEvent) => {
     if (!destOpen || !filteredDest.length) return
@@ -621,10 +721,85 @@ export default function App() {
           gap: 8,
         }}>
 
-        {/* Glass card */}
+        {/* Glass card — collapsed pill (mobile + route active) */}
+        {isMobile && panelCollapsed ? (
+          <button
+            onClick={() => setPanelCollapsed(false)}
+            style={{
+              ...glassStyle(isDark),
+              display: 'flex', alignItems: 'center', gap: 0,
+              padding: '0 6px', height: 52, width: '100%',
+              border: 'none', cursor: 'pointer', textAlign: 'left',
+              overflow: 'hidden',
+            }}
+          >
+            {/* Origin side */}
+            <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minWidth: 0, padding: '0 8px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <div style={{ width: 8, height: 8, borderRadius: '50%', background: '#2563eb', border: '1.5px solid #fff', boxShadow: '0 1px 3px rgba(37,99,235,0.5)', flexShrink: 0 }} />
+                <span style={{ fontSize: 13, fontWeight: 600, color: text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {originQuery || 'Start'}
+                </span>
+              </div>
+              {originDetails && (
+                <div style={{ fontSize: 10, color: sub, paddingLeft: 14, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {originDetails.properties?.building || originDetails.properties?.type} · Level {originDetails.properties?.level}
+                </div>
+              )}
+            </div>
+            {/* Arrow */}
+            <ChevronRight size={14} color={faint} style={{ flexShrink: 0 }} />
+            {/* Dest side */}
+            <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minWidth: 0, padding: '0 8px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <Search size={12} color={sub} style={{ flexShrink: 0 }} />
+                <span style={{ fontSize: 13, fontWeight: 600, color: text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {destQuery || 'Destination'}
+                </span>
+              </div>
+              {destDetails && (
+                <div style={{ fontSize: 10, color: sub, paddingLeft: 18, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {destDetails.properties?.building || destDetails.properties?.type} · Level {destDetails.properties?.level}
+                </div>
+              )}
+            </div>
+          </button>
+        ) : (
         <div style={glassStyle(isDark, { padding: '8px 6px 6px' })}>
 
-          {/* Brand header */}
+          {/* ── QR Scan prominent button (mobile only) ──────────────── */}
+          {isMobile && (
+          <button
+            onClick={() => setShowQrScanner(true)}
+            style={{
+              display: 'flex', alignItems: 'center', gap: 12,
+              width: '100%', padding: '10px 12px 10px 10px',
+              borderRadius: 14, border: 'none', cursor: 'pointer',
+              background: isDark ? 'rgba(37,99,235,0.14)' : 'rgba(37,99,235,0.08)',
+              marginBottom: 4,
+              transition: 'background 0.15s ease',
+            }}
+            onMouseEnter={e => e.currentTarget.style.background = isDark ? 'rgba(37,99,235,0.22)' : 'rgba(37,99,235,0.14)'}
+            onMouseLeave={e => e.currentTarget.style.background = isDark ? 'rgba(37,99,235,0.14)' : 'rgba(37,99,235,0.08)'}
+          >
+            <div style={{
+              width: 40, height: 40, borderRadius: 12,
+              background: '#2563eb',
+              boxShadow: '0 3px 12px rgba(37,99,235,0.4)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              flexShrink: 0,
+            }}>
+              <QrCode size={20} color="#fff" />
+            </div>
+            <div style={{ flex: 1, textAlign: 'left' }}>
+              <div style={{ fontSize: 14, fontWeight: 700, color: text }}>Scan QR Code</div>
+              <div style={{ fontSize: 11, color: sub, marginTop: 1 }}>Scan a location code to set your starting point</div>
+            </div>
+            <ChevronRight size={16} color={faint} />
+          </button>
+          )}
+
+
 
 
           {/* ── Origin input row ───────────────────────────────────── */}
@@ -643,19 +818,26 @@ export default function App() {
                 )}
               </div>
 
-              <input
-                type="text"
-                placeholder={pickMode === 'origin' ? 'Tap the map to set start…' : 'Your starting point'}
-                value={originQuery}
-                onChange={e => { setOriginQuery(e.target.value); setOriginOpen(true); setDestOpen(false); setPickMode(false) }}
-                onFocus={() => { if (pickMode !== 'origin') { setOriginOpen(true); setDestOpen(false); } }}
-                onKeyDown={onOriginKey}
-                style={{
-                  flex: 1, minWidth: 0, background: 'transparent', border: 'none', outline: 'none',
-                  fontSize: 14, fontWeight: 500, color: text, caretColor: '#2563eb',
-                  fontFamily: 'inherit',
-                }}
-              />
+              <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column' }}>
+                <input
+                  type="text"
+                  placeholder={pickMode === 'origin' ? 'Tap the map to set start…' : 'Your starting point'}
+                  value={originQuery}
+                  onChange={e => { setOriginQuery(e.target.value); setOriginOpen(true); setDestOpen(false); setPickMode(false) }}
+                  onFocus={() => { if (pickMode !== 'origin') { setOriginOpen(true); setDestOpen(false); } }}
+                  onKeyDown={onOriginKey}
+                  style={{
+                    width: '100%', background: 'transparent', border: 'none', outline: 'none',
+                    fontSize: 14, fontWeight: 500, color: text, caretColor: '#2563eb',
+                    fontFamily: 'inherit',
+                  }}
+                />
+                {originDetails && (
+                  <div style={{ fontSize: 10, color: sub, marginTop: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {originDetails.properties?.building || originDetails.properties?.type} · Level {originDetails.properties?.level}
+                  </div>
+                )}
+              </div>
 
               {/* Pick-from-map button */}
               <button
@@ -693,6 +875,17 @@ export default function App() {
                 ...glassStyle(isDark, { padding: '6px', position: 'absolute', top: '100%', left: 0, right: 0, marginTop: 6, zIndex: 50, maxHeight: isMobile ? 180 : 220, overflowY: 'auto' }),
                 animation: 'dropdown-in 0.18s cubic-bezier(0.34,1.26,0.64,1) forwards',
               }}>
+                {/* QR scan as first option (mobile only, when nothing typed) */}
+                {!originQuery && isMobile && (
+                  <DropItem
+                    name="Scan QR Code"
+                    sub="Open camera to scan a location QR code"
+                    type="pick-map"
+                    isActive={false}
+                    onHover={() => {}}
+                    onClick={() => { setOriginOpen(false); setShowQrScanner(true) }}
+                  />
+                )}
                 <DropItem
                   name="Pick location from map"
                   sub="Tap the map to set starting point"
@@ -755,19 +948,26 @@ export default function App() {
               <div style={{ width: 32, height: 32, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
                 <Search size={17} color={sub} />
               </div>
-              <input
-                type="text"
-                placeholder={pickMode === 'dest' ? 'Tap the map to set destination…' : 'Where do you want to go?'}
-                value={destQuery}
-                onChange={e => { setDestQuery(e.target.value); setDestOpen(true); setOriginOpen(false); setDestIdx(-1); setPickMode(false) }}
-                onFocus={() => { if (pickMode !== 'dest') { setDestOpen(true); setOriginOpen(false); } }}
-                onKeyDown={onDestKey}
-                style={{
-                  flex: 1, minWidth: 0, background: 'transparent', border: 'none', outline: 'none',
-                  fontSize: 14, fontWeight: 500, color: text, caretColor: '#2563eb',
-                  fontFamily: 'inherit',
-                }}
-              />
+              <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column' }}>
+                <input
+                  type="text"
+                  placeholder={pickMode === 'dest' ? 'Tap the map to set destination…' : 'Where do you want to go?'}
+                  value={destQuery}
+                  onChange={e => { setDestQuery(e.target.value); setDestOpen(true); setOriginOpen(false); setDestIdx(-1); setPickMode(false) }}
+                  onFocus={() => { if (pickMode !== 'dest') { setDestOpen(true); setOriginOpen(false); } }}
+                  onKeyDown={onDestKey}
+                  style={{
+                    width: '100%', background: 'transparent', border: 'none', outline: 'none',
+                    fontSize: 14, fontWeight: 500, color: text, caretColor: '#2563eb',
+                    fontFamily: 'inherit',
+                  }}
+                />
+                {destDetails && (
+                  <div style={{ fontSize: 10, color: sub, marginTop: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {destDetails.properties?.building || destDetails.properties?.type} · Level {destDetails.properties?.level}
+                  </div>
+                )}
+              </div>
               {/* Pick-from-map button for dest */}
               <button
                 title={pickMode === 'dest' ? 'Cancel' : 'Pick location from map'}
@@ -898,6 +1098,7 @@ export default function App() {
           {/* Bottom inner spacing */}
           <div style={{ height: 2 }} />
         </div>
+        )}
 
         {/* Loading badge */}
         {isLoading && (
@@ -1001,6 +1202,14 @@ export default function App() {
           </div>
         </div>
       </div>
+      {/* ═══ QR SCANNER MODAL ═══════════════════════════════════════ */}
+      {showQrScanner && (
+        <QrScanner
+          isDark={isDark}
+          onResult={handleQrResult}
+          onClose={() => setShowQrScanner(false)}
+        />
+      )}
     </div>
   )
 }
