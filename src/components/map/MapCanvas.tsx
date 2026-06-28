@@ -103,14 +103,43 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
 
 	// Route drawing animation state & effect
 	const [animatedCoords, setAnimatedCoords] = useState<[number, number, number][]>([]);
+	const [isAnimFinished, setIsAnimFinished] = useState(false);
 	const mapRef = useRef<any>(null);
+
+	const routeStats = useMemo(() => {
+		if (!route.routeCoordinates || route.routeCoordinates.length < 2) return null;
+		let distM = 0;
+		for (let i = 1; i < route.routeCoordinates.length; i++) {
+			distM += haversineDist(
+				[route.routeCoordinates[i - 1][0], route.routeCoordinates[i - 1][1]],
+				[route.routeCoordinates[i][0], route.routeCoordinates[i][1]]
+			);
+		}
+		const totalSeconds = Math.round(distM / 1.2);
+		const mins = Math.floor(totalSeconds / 60);
+		const secs = totalSeconds % 60;
+		const timeStr = mins > 0 ? `${mins} min${mins > 1 ? 's' : ''}` : `${secs} sec${secs > 1 ? 's' : ''}`;
+		const distStr = distM < 1000 ? `${Math.round(distM)} m` : `${(distM / 1000).toFixed(1)} km`;
+		return { timeStr, distStr };
+	}, [route.routeCoordinates]);
+
+	const middleCoord = useMemo(() => {
+		if (!route.routeCoordinates || route.routeCoordinates.length === 0) return null;
+		const coordsOnActiveLevel = route.routeCoordinates.filter(c => c[2] === activeLevel);
+		if (coordsOnActiveLevel.length === 0) return null;
+		const midIdx = Math.floor(coordsOnActiveLevel.length / 2);
+		return coordsOnActiveLevel[midIdx];
+	}, [route.routeCoordinates, activeLevel]);
 
 	useEffect(() => {
 		const coords = route.routeCoordinates;
 		if (!coords || coords.length === 0) {
 			setAnimatedCoords([]);
+			setIsAnimFinished(false);
 			return;
 		}
+
+		setIsAnimFinished(false);
 
 		// 1. Calculate cumulative segment distances
 		const distances: number[] = [0];
@@ -144,6 +173,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
 
 			if (progress >= 1 || idx >= distances.length - 1) {
 				setAnimatedCoords(coords);
+				setIsAnimFinished(true);
 				return;
 			}
 
@@ -165,6 +195,8 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
 
 			if (progress < 1) {
 				animationFrameId = requestAnimationFrame(animate);
+			} else {
+				setIsAnimFinished(true);
 			}
 		};
 
@@ -568,6 +600,50 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
 						</Marker>
 					);
 				})}
+
+				{/* Transparent Glassmorphic Speech Bubble Tooltip for route info */}
+				{isAnimFinished && middleCoord && routeStats && (
+					<Marker longitude={middleCoord[0]} latitude={middleCoord[1]} anchor="bottom" offset={[0, -10]}>
+						<div
+							className="animate-in fade-in zoom-in duration-300 flex flex-col items-center select-none pointer-events-none"
+							style={{ zIndex: 10 }}
+						>
+							<div
+								style={{
+									background: isDarkMode ? 'rgba(28, 28, 30, 0.72)' : 'rgba(255, 255, 255, 0.72)',
+									backdropFilter: 'blur(20px) saturate(190%)',
+									WebkitBackdropFilter: 'blur(20px) saturate(190%)',
+									border: `1px solid ${isDarkMode ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.06)'}`,
+									borderRadius: '8px',
+									padding: '5px 9px',
+									boxShadow: '0 4px 12px rgba(0, 0, 0, 0.08)',
+									display: 'flex',
+									flexDirection: 'column',
+									alignItems: 'center',
+									gap: '1px',
+								}}
+							>
+								<span style={{ fontSize: '11px', fontWeight: 800, color: isDarkMode ? '#ffffff' : '#1d1d1f', lineHeight: 1.1 }}>
+									{routeStats.timeStr}
+								</span>
+								<span style={{ fontSize: '9px', fontWeight: 600, color: isDarkMode ? '#aeaeb2' : '#6e6e73', lineHeight: 1.1 }}>
+									{routeStats.distStr}
+								</span>
+							</div>
+							<div
+								style={{
+									width: 0,
+									height: 0,
+									borderLeft: '5px solid transparent',
+									borderRight: '5px solid transparent',
+									borderTop: `5px solid ${isDarkMode ? 'rgba(28, 28, 30, 0.72)' : 'rgba(255, 255, 255, 0.72)'}`,
+									marginTop: '-1px',
+									filter: 'drop-shadow(0 1px 1px rgba(0,0,0,0.06))',
+								}}
+							/>
+						</div>
+					</Marker>
+				)}
 
 				{/* Custom Coordinate Destination Marker */}
 				{destInfo && route.destination?.startsWith('coord:') && (
