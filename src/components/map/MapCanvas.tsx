@@ -470,47 +470,16 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
 								You {route.originLevel !== activeLevel && `(L${route.originLevel})`}
 							</div>
 
-							{/* Dot + compass cone */}
-							<div style={{ position: 'relative', width: 42, height: 42, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-								{/* Compass heading cone removed (was showing as an extra arrow in the viewport) */}
-
-								{/* Accuracy ring (GPS active = solid, dead reckoning = dashed) */}
-								{route.originLevel === activeLevel && (
-									<div
-										style={{
-											position: 'absolute',
-											width: 36,
-											height: 36,
-											borderRadius: '50%',
-											border: gpsActive ? '1.5px solid rgba(37,99,235,0.35)' : '1.5px dashed rgba(37,99,235,0.30)',
-											background: 'rgba(37,99,235,0.08)',
-										}}
-									/>
-								)}
-
-								{/* Ping ring */}
-								{route.originLevel === activeLevel && (
-									<span
-										style={{
-											position: 'absolute',
-											width: 18,
-											height: 18,
-											borderRadius: '50%',
-											background: 'rgba(59,130,246,0.45)',
-											animation: 'ping 1.6s cubic-bezier(0,0,0.2,1) infinite',
-										}}
-									/>
-								)}
-
-								{/* Core blue dot */}
+							{/* Simple blue dot start marker */}
+							<div style={{ position: 'relative', width: 24, height: 24, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
 								<div
 									style={{
-										width: 16,
-										height: 16,
+										width: 15,
+										height: 15,
 										borderRadius: '50%',
 										background: '#2563eb',
 										border: '2.5px solid #fff',
-										boxShadow: '0 2px 8px rgba(37,99,235,0.55)',
+										boxShadow: '0 2px 8px rgba(37,99,235,0.5)',
 										position: 'relative',
 										zIndex: 2,
 										display: 'flex',
@@ -518,7 +487,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
 										justifyContent: 'center',
 									}}
 								>
-									<div style={{ width: 5, height: 5, borderRadius: '50%', background: '#fff' }} />
+									<div style={{ width: 4, height: 4, borderRadius: '50%', background: '#fff' }} />
 								</div>
 							</div>
 						</div>
@@ -531,29 +500,74 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
 					const { type, category, name, transit_type, node_id, level } = marker.properties || {};
 					const key = node_id || marker.properties?._feature_id || `${lng}-${lat}`;
 
-              {/* Simple blue dot start marker */}
-              <div style={{ position: 'relative', width: 24, height: 24, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                <div
-                  style={{
-                    width: 15,
-                    height: 15,
-                    borderRadius: '50%',
-                    background: '#2563eb',
-                    border: '2.5px solid #fff',
-                    boxShadow: '0 2px 8px rgba(37,99,235,0.5)',
-                    position: 'relative',
-                    zIndex: 2,
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                  }}
-                >
-                  <div style={{ width: 4, height: 4, borderRadius: '50%', background: '#fff' }} />
-                </div>
-              </div>
-            </div>
-          </Marker>
-        )}
+					const isTransit = type === 'transit';
+					const isClassroom = category === 'classroom';
+					const isInactiveFloor = level !== activeLevel;
+
+					const isRouteActive = !!route.destination;
+					const isDestination = route.destination && (marker.properties?._feature_id === route.destination || node_id === route.destination);
+					const showIcon = !isRouteActive || isDestination;
+
+					const labelColor = isTransit ? '#10b981' : isClassroom ? '#6366f1' : '#f43f5e';
+					const textShadowStyle = isDarkMode ? '-1.2px -1.2px 0 #000, 1.2px -1.2px 0 #000, -1.2px 1.2px 0 #000, 1.2px 1.2px 0 #000' : '-1.2px -1.2px 0 #fff, 1.2px -1.2px 0 #fff, -1.2px 1.2px 0 #fff, 1.2px 1.2px 0 #fff';
+
+					return (
+						<Marker key={key} longitude={lng} latitude={lat} anchor="bottom">
+							<div
+								style={{ opacity: isInactiveFloor ? 0.6 : 1, cursor: pickingFromMap ? 'pointer' : 'default' }}
+								className="group flex flex-col items-center"
+								onClick={(e) => {
+									if (pickingFromMap) {
+										e.stopPropagation();
+										document.dispatchEvent(
+											new CustomEvent('map:pick-origin', {
+												detail: {
+													lng,
+													lat,
+													level,
+													featureId: marker.properties?._feature_id || node_id,
+													name: name || 'POI',
+												},
+											})
+										);
+									}
+								}}
+							>
+								{/* Outlined Label without Background */}
+								<div
+									style={{
+										color: labelColor,
+										textShadow: textShadowStyle,
+									}}
+									className="mb-1 text-[9.5px] font-extrabold tracking-wide whitespace-nowrap opacity-85 group-hover:opacity-100 transition-opacity pointer-events-none"
+								>
+									{name || 'POI'} {isInactiveFloor && `(L${level})`}
+								</div>
+
+								{/* Marker Pin */}
+								{showIcon && (
+									<div
+										className={`w-6 h-6 rounded-full flex items-center justify-center shadow-md border-2 border-background transition-transform duration-200 group-hover:scale-110 ${
+											isTransit ? 'bg-emerald-500 text-white' : isClassroom ? 'bg-indigo-500 text-white' : 'bg-rose-500 text-white'
+										}`}
+									>
+										{isTransit ? (
+											transit_type === 'staircase' ? (
+												<StairsIcon className="w-3.5 h-3.5" />
+											) : (
+												<ArrowUpDown className="w-3.5 h-3.5" />
+											)
+										) : isClassroom ? (
+											<GraduationCap className="w-3.5 h-3.5" />
+										) : (
+											<MapPin className="w-3.5 h-3.5" />
+										)}
+									</div>
+								)}
+							</div>
+						</Marker>
+					);
+				})}
 
 				{/* Custom Coordinate Destination Marker */}
 				{destInfo && route.destination?.startsWith('coord:') && (

@@ -8,6 +8,13 @@ import {
   ChevronRight, AlertTriangle, Footprints
 } from 'lucide-react'
 
+const StairsIcon = ({ size = 14 }: { size?: number }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5"
+    fill="none" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M19 20H13V15H8V10H3V4" />
+  </svg>
+)
+
 // Local haversine helper (meters)
 function haversine(a: [number, number], b: [number, number]): number {
 	const [lon1, lat1] = a;
@@ -21,69 +28,8 @@ function haversine(a: [number, number], b: [number, number]): number {
 	return R * 2 * Math.atan2(Math.sqrt(s), Math.sqrt(1 - s));
 }
 
-// ─────────────────────────────────────────────────────────────────
-// PROFESSIONAL DESIGN TOKENS (NSU Wayfinder - Google Maps Style)
-// ─────────────────────────────────────────────────────────────────
-const DESIGN_TOKENS = {
-	colors: {
-		light: {
-			bg: '#ffffff',
-			surface: '#f8f9fa',
-			text: '#202124',
-			secondary: '#5f6368',
-			tertiary: '#9aa0a6',
-			divider: '#e8eaed',
-			primary: '#003DA5', // NSU Blue
-			accent: '#00A86B', // NSU Green
-			success: '#10b981',
-			info: '#6366f1',
-			action: '#f97316',
-		},
-		dark: {
-			bg: '#121212',
-			surface: '#1e1e1e',
-			text: '#e8eaed',
-			secondary: '#bdc1c6',
-			tertiary: '#80868b',
-			divider: '#303134',
-			primary: '#4a9eff', // Lighter NSU Blue for dark mode
-			accent: '#4ade80', // Lighter green for dark mode
-			success: '#10b981',
-			info: '#818cf8',
-			action: '#fb923c',
-		},
-	},
-	spacing: {
-		xs: 4,
-		sm: 8,
-		md: 12,
-		lg: 16,
-		xl: 24,
-		xxl: 32,
-	},
-	radius: {
-		sm: 8,
-		md: 12,
-		lg: 16,
-		full: 9999,
-	},
-	shadow: {
-		sm: '0 1px 2px rgba(0,0,0,0.05)',
-		md: '0 4px 12px rgba(0,0,0,0.08)',
-		lg: '0 8px 24px rgba(0,0,0,0.12)',
-		xl: '0 16px 40px rgba(0,0,0,0.16)',
-	},
-	transitions: {
-		fast: '150ms ease-out',
-		base: '200ms ease-out',
-		slow: '300ms cubic-bezier(0.4, 0, 0.2, 1)',
-	},
-};
 
-// Get colors based on dark mode
-function colors(isDark: boolean) {
-	return DESIGN_TOKENS.colors[isDark ? 'dark' : 'light'];
-}
+
 
 // POI color mapping (for markers and listings)
 const POI_COLORS: Record<string, { bg: string; glow: string }> = {
