@@ -361,3 +361,13 @@ Transit nodes (lifts/staircases) at the same physical XY on L1 and L2 (e.g. `nac
 - Added horizontal padding (`paddingLeft: 4`, `paddingRight: 6`) to the level scroll container to prevent the buttons' hover scale and shadow glows from getting cropped on the edges.
 - Integrated auto-scrolling: Attached a callback ref mapping to level buttons and added a `useEffect` that calls `scrollIntoView({ behavior: 'smooth', block: 'nearest' })` on the active level button when `activeLevel` changes, ensuring the selected floor is always in view.
 - Added vertical padding (`paddingTop: 8`, `paddingBottom: 8`) to the scroll container to prevent top (L11) and bottom (B3) buttons' active state shadows/transforms from getting clipped at container boundaries.
+
+### 2026-06-28 — Zoom Buttons & Route Stats Speech Bubble
+
+**Decision**: Style MapLibre zoom buttons vertically with dark mode colors, hide on mobile view, and add a walk stats speech bubble on route finish.
+
+**Implementation**:
+- Re-oriented zoom buttons in `index.css` to be vertical (zoom in top, zoom out bottom) and added `overflow: hidden` to prevent hover corner bleed.
+- Filtered control icons in dark mode with `filter: invert(1) brightness(1.5)` for high visibility, and hid them on screen widths <= `768px` (mobile).
+- Placed a transparent glassmorphic speech bubble in `MapCanvas.tsx` at the middle coordinate of the route when animation finishes.
+- Styled the speech bubble with a blue background, white text, and a custom walking person SVG directions icon on the left of a left-aligned stats layout.
