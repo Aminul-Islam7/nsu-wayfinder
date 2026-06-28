@@ -45,6 +45,107 @@ function poiColor(type: string, category?: string) {
 	return POI_COLORS.default;
 }
 
+const RECENT_LOCATIONS_COOKIE = 'nsu_recent_locations'
+const MAX_RECENT_LOCATIONS = 2
+
+type RecentLocation = {
+  key: string
+  label: string
+  subtitle: string
+  coords: [number, number]
+  level: Level
+  featureId?: string
+  type?: string
+  category?: string
+  transitType?: string
+  kind: 'feature' | 'coord'
+}
+
+function getFeatureKey(feature: any): string | null {
+  return feature?.properties?._feature_id || feature?.properties?.node_id || null
+}
+
+function readRecentLocations(): RecentLocation[] {
+  if (typeof window === 'undefined') return []
+  const match = document.cookie.match(new RegExp(`(?:^|; )${RECENT_LOCATIONS_COOKIE}=([^;]*)`))
+  if (!match) return []
+  try {
+    const parsed = JSON.parse(decodeURIComponent(match[1]))
+    if (!Array.isArray(parsed)) return []
+    return parsed
+      .map((item) => {
+        if (!item || typeof item !== 'object') return null
+        const coords = Array.isArray((item as any).coords) ? (item as any).coords : null
+        if (!coords || coords.length < 2) return null
+        return {
+          key: String((item as any).key || ''),
+          label: String((item as any).label || ''),
+          subtitle: String((item as any).subtitle || ''),
+          coords: [Number(coords[0]), Number(coords[1])],
+          level: Number((item as any).level) as Level,
+          featureId: (item as any).featureId || undefined,
+          type: (item as any).type || undefined,
+          category: (item as any).category || undefined,
+          transitType: (item as any).transitType || undefined,
+          kind: (item as any).kind === 'coord' ? 'coord' : 'feature',
+        } as RecentLocation
+      })
+      .filter((item): item is RecentLocation => item !== null)
+      .slice(0, MAX_RECENT_LOCATIONS)
+  } catch {
+    return []
+  }
+}
+
+function writeRecentLocations(locations: RecentLocation[]) {
+  if (typeof window === 'undefined') return
+  document.cookie = `${RECENT_LOCATIONS_COOKIE}=${encodeURIComponent(JSON.stringify(locations.slice(0, MAX_RECENT_LOCATIONS)))}; Path=/; Max-Age=${60 * 60 * 24 * 365}`
+}
+
+function upsertRecentLocation(locations: RecentLocation[], nextLocation: RecentLocation): RecentLocation[] {
+  const deduped = [nextLocation, ...locations.filter(location => location.key !== nextLocation.key)]
+  return deduped.slice(0, MAX_RECENT_LOCATIONS)
+}
+
+function createRecentLocationFromFeature(feature: any): RecentLocation | null {
+  const coords = feature?.geometry?.coordinates
+  if (!coords || coords.length < 2) return null
+  const [lng, lat] = coords as [number, number]
+  const level = (feature?.properties?.level || 1) as Level
+  const featureId = getFeatureKey(feature)
+  const label = feature?.properties?.name || `${lat.toFixed(5)}, ${lng.toFixed(5)}`
+  return {
+    key: featureId || `coord:${lng},${lat},${level}`,
+    label,
+    subtitle: `${feature?.properties?.building || feature?.properties?.type || 'Location'} · Level ${level}`,
+    coords: [lng, lat],
+    level,
+    featureId: featureId || undefined,
+    type: feature?.properties?.type || undefined,
+    category: feature?.properties?.category || undefined,
+    transitType: feature?.properties?.transit_type || undefined,
+    kind: featureId ? 'feature' : 'coord',
+  }
+}
+
+function createRecentLocationFromCoords(params: {
+  coords: [number, number]
+  level: Level
+  label?: string
+  subtitle?: string
+}): RecentLocation {
+  const { coords, level, label, subtitle } = params
+  const [lng, lat] = coords
+  return {
+    key: `coord:${lng},${lat},${level}`,
+    label: label || `${lat.toFixed(5)}, ${lng.toFixed(5)}`,
+    subtitle: subtitle || `Level ${level}`,
+    coords,
+    level,
+    kind: 'coord',
+  }
+}
+
 const ALL_LEVELS: { value: Level; label: string }[] = [
   { value: 11, label: '11' },
   { value: 10, label: '10' },
@@ -150,10 +251,19 @@ export default function App() {
   const [pickMode,    setPickMode]    = useState<'origin' | 'dest' | false>(false)
   const [panelCollapsed, setPanelCollapsed] = useState(false)
   const [showQrScanner,  setShowQrScanner]  = useState(false)
+  const [recentLocations, setRecentLocations] = useState<RecentLocation[]>(() => readRecentLocations())
 
   const panelRef = useRef<HTMLDivElement>(null)
   const levelRefs = useRef<Record<number, HTMLButtonElement | null>>({})
   const hasRouteRef = useRef(false)
+
+  useEffect(() => {
+    writeRecentLocations(recentLocations)
+  }, [recentLocations])
+
+  const recordRecentLocation = useCallback((location: RecentLocation) => {
+    setRecentLocations(prev => upsertRecentLocation(prev, location))
+  }, [])
 
   // ── QR result handler ─────────────────────────────────────────────
   const handleQrResult = useCallback((result: { startParam?: string; destParam?: string; levelParam?: string; latParam?: string; lngParam?: string; rawUrl: string }) => {
@@ -173,6 +283,7 @@ export default function App() {
           setOrigin([lng, lat], lvl)
           setOriginQuery(`${lat.toFixed(5)}, ${lng.toFixed(5)}`)
           setActiveLevel(lvl)
+          recordRecentLocation(createRecentLocationFromCoords({ coords: [lng, lat], level: lvl }))
         }
       } else {
         const p = features.find(f => f.properties?._feature_id === startParam)
@@ -183,6 +294,8 @@ export default function App() {
           setOrigin([lng, lat], lvl)
           setOriginQuery(p.properties?.name || '')
           setActiveLevel(lvl)
+          const recentLocation = createRecentLocationFromFeature(p)
+          if (recentLocation) recordRecentLocation(recentLocation)
         }
       }
     } else if (latParam && lngParam) {
@@ -193,6 +306,7 @@ export default function App() {
       setOrigin([rawLng, rawLat], lvl)
       setOriginQuery(`${rawLat.toFixed(5)}, ${rawLng.toFixed(5)}`)
       setActiveLevel(lvl)
+      recordRecentLocation(createRecentLocationFromCoords({ coords: [rawLng, rawLat], level: lvl }))
     }
 
     if (destParam) {
@@ -203,7 +317,9 @@ export default function App() {
           const lat = parseFloat(parts[1])
           setDestination(destParam)
           setDestQuery(`${lat.toFixed(5)}, ${lng.toFixed(5)}`)
-          setActiveLevel(parseInt(parts[2]) as Level)
+          const lvl = parseInt(parts[2]) as Level
+          setActiveLevel(lvl)
+          recordRecentLocation(createRecentLocationFromCoords({ coords: [lng, lat], level: lvl }))
         }
       } else {
         const p = features.find(f => f.properties?._feature_id === destParam)
@@ -211,6 +327,8 @@ export default function App() {
           setDestination(destParam)
           setDestQuery(p.properties?.name || '')
           setActiveLevel((p.properties?.level || 1) as Level)
+          const recentLocation = createRecentLocationFromFeature(p)
+          if (recentLocation) recordRecentLocation(recentLocation)
         }
       }
     }
@@ -219,7 +337,7 @@ export default function App() {
       const lvl = parseInt(levelParam, 10) as Level
       if (!isNaN(lvl) && ALL_LEVELS.some(l => l.value === lvl)) setActiveLevel(lvl)
     }
-  }, [features, setRawOrigin, setOrigin, setDestination, setActiveLevel])
+  }, [features, recordRecentLocation, setRawOrigin, setOrigin, setDestination, setActiveLevel])
 
   const originDetails = useMemo(() => {
     const startCoords = route.rawOrigin || route.origin
@@ -417,13 +535,23 @@ export default function App() {
       .sort((a, b) => (a.properties?.name || '').localeCompare(b.properties?.name || '')),
     [features]
   )
-  const filteredDest   = pois.filter(p => (p.properties?.name || '').toLowerCase().includes(destQuery.toLowerCase()))
-  const filteredOrigin = points.filter(p => (p.properties?.name || '').toLowerCase().includes(originQuery.toLowerCase())).slice(0, 8)
+  const recentKeys = new Set(recentLocations.map(location => location.key))
+  const recentOriginItems = recentLocations
+  const recentDestItems = recentLocations
+  const filteredDest   = pois.filter(p => {
+    const key = getFeatureKey(p)
+    return (!key || !recentKeys.has(key)) && (p.properties?.name || '').toLowerCase().includes(destQuery.toLowerCase())
+  })
+  const filteredOrigin = points.filter(p => {
+    const key = getFeatureKey(p)
+    return (!key || !recentKeys.has(key)) && (p.properties?.name || '').toLowerCase().includes(originQuery.toLowerCase())
+  }).slice(0, 8)
 
   // ── Map pick origin ──────────────────────────────────────────────
   const onMapPick = useCallback((e: Event) => {
     if (!pickMode) return
     let { lng, lat, level, featureId, name } = (e as CustomEvent).detail as { lng: number; lat: number; level: Level; featureId?: string; name?: string }
+    let closestPoi: any = null
 
     // Snap to nearest POI if click is very close (under 2.5m)
     if (!featureId) {
@@ -433,7 +561,6 @@ export default function App() {
         f.properties?.level === level
       )
       let minDistance = Infinity
-      let closestPoi: any = null
       for (const poi of levelPois) {
         const d = haversine([lng, lat], poi.geometry.coordinates as [number, number])
         if (d < minDistance) {
@@ -453,17 +580,28 @@ export default function App() {
       setRawOrigin([lng, lat])
       setOrigin([lng, lat], level)
       setOriginQuery(featureId ? (name || '') : `${lat.toFixed(5)}, ${lng.toFixed(5)}`)
+      recordRecentLocation(
+        (closestPoi || (featureId ? features.find(f => getFeatureKey(f) === featureId) : null))
+          ? createRecentLocationFromFeature(closestPoi || features.find(f => getFeatureKey(f) === featureId)) || createRecentLocationFromCoords({ coords: [lng, lat], level, label: name || undefined })
+          : createRecentLocationFromCoords({ coords: [lng, lat], level, label: name || undefined })
+      )
     } else if (pickMode === 'dest') {
       if (featureId) {
         setDestination(featureId)
         setDestQuery(name || '')
+        recordRecentLocation(
+          (closestPoi || features.find(f => getFeatureKey(f) === featureId))
+            ? createRecentLocationFromFeature(closestPoi || features.find(f => getFeatureKey(f) === featureId)) || createRecentLocationFromCoords({ coords: [lng, lat], level, label: name || undefined })
+            : createRecentLocationFromCoords({ coords: [lng, lat], level, label: name || undefined })
+        )
       } else {
         setDestination(`coord:${lng},${lat},${level}`)
         setDestQuery(`${lat.toFixed(5)}, ${lng.toFixed(5)}`)
+        recordRecentLocation(createRecentLocationFromCoords({ coords: [lng, lat], level, label: `${lat.toFixed(5)}, ${lng.toFixed(5)}` }))
       }
     }
     setPickMode(false)
-  }, [pickMode, features, setRawOrigin, setOrigin, setDestination, setDestQuery])
+  }, [pickMode, features, recordRecentLocation, setRawOrigin, setOrigin, setDestination, setDestQuery])
 
   useEffect(() => {
     document.addEventListener('map:pick-origin', onMapPick)
@@ -542,6 +680,8 @@ export default function App() {
   const selectDest = (poi: any) => {
     setDestination(poi.properties._feature_id)
     setDestQuery(poi.properties.name)
+    const recentLocation = createRecentLocationFromFeature(poi)
+    if (recentLocation) recordRecentLocation(recentLocation)
     setDestOpen(false); setDestIdx(-1)
   }
   const selectOrigin = (p: any) => {
@@ -549,6 +689,8 @@ export default function App() {
     const level = (p.properties?.level || activeLevel) as Level
     setRawOrigin([lng, lat]); setOrigin([lng, lat], level)
     setOriginQuery(p.properties.name)
+    const recentLocation = createRecentLocationFromFeature(p)
+    if (recentLocation) recordRecentLocation(recentLocation)
     setOriginOpen(false); setOriginIdx(-1)
   }
 
@@ -577,6 +719,7 @@ export default function App() {
         newOrigin = [lng, lat]
         newOriginLevel = lvl
         newOriginQuery = currentDestQuery || `${lat.toFixed(5)}, ${lng.toFixed(5)}`
+        recordRecentLocation(createRecentLocationFromCoords({ coords: [lng, lat], level: lvl, label: currentDestQuery || undefined }))
       } else {
         const poi = features.find(f => f.properties?._feature_id === currentDestination || f.properties?.node_id === currentDestination)
         if (poi && poi.geometry?.coordinates) {
@@ -586,6 +729,8 @@ export default function App() {
           newOrigin = [lng, lat]
           newOriginLevel = lvl
           newOriginQuery = poi.properties?.name || ''
+          const recentLocation = createRecentLocationFromFeature(poi)
+          if (recentLocation) recordRecentLocation(recentLocation)
         }
       }
     }
@@ -605,9 +750,12 @@ export default function App() {
         if (matchedPoi) {
           newDestination = matchedPoi.properties?._feature_id || matchedPoi.properties?.node_id || null
           newDestQuery = matchedPoi.properties?.name || ''
+          const recentLocation = createRecentLocationFromFeature(matchedPoi)
+          if (recentLocation) recordRecentLocation(recentLocation)
         } else {
           newDestination = `coord:${coords[0]},${coords[1]},${currentOriginLevel}`
           newDestQuery = currentOriginQuery || `${coords[1].toFixed(5)}, ${coords[0].toFixed(5)}`
+          recordRecentLocation(createRecentLocationFromCoords({ coords, level: currentOriginLevel, label: currentOriginQuery || undefined }))
         }
       }
     }
@@ -642,7 +790,11 @@ export default function App() {
     name: string; sub: string; type: string; category?: string; transitType?: string
     isActive: boolean; onClick: () => void; onHover: () => void
   }) => {
-    const c = type === 'pick-map' ? { bg: '#3b82f6', glow: 'rgba(59,130,246,0.3)' } : poiColor(type, category)
+    const c = type === 'pick-map'
+      ? { bg: '#3b82f6', glow: 'rgba(59,130,246,0.3)' }
+      : type === 'recent'
+      ? { bg: '#475569', glow: 'rgba(71,85,105,0.28)' }
+      : poiColor(type, category)
     return (
       <button
         onMouseEnter={onHover}
@@ -656,6 +808,7 @@ export default function App() {
         }}>
         <IconBox bg={c.bg} glow={c.glow}>
           {type === 'pick-map' ? <MapPin size={14} />
+            : type === 'recent' ? <Clock size={13} />
             : type === 'transit'
             ? transitType === 'staircase' ? <StairsIcon /> : <ArrowUpDown size={14} />
             : category === 'classroom' ? <GraduationCap size={14} /> : <MapPin size={14} />}
@@ -875,6 +1028,34 @@ export default function App() {
                 ...glassStyle(isDark, { padding: '6px', position: 'absolute', top: '100%', left: 0, right: 0, marginTop: 6, zIndex: 50, maxHeight: isMobile ? 180 : 220, overflowY: 'auto' }),
                 animation: 'dropdown-in 0.18s cubic-bezier(0.34,1.26,0.64,1) forwards',
               }}>
+                {recentOriginItems.map((location, i) => (
+                  <DropItem
+                    key={location.key}
+                    name={location.label}
+                    sub={location.subtitle}
+                    type="recent"
+                    isActive={originIdx === -2 - i}
+                    onHover={() => setOriginIdx(-2 - i)}
+                    onClick={() => {
+                      if (location.kind === 'feature' && location.featureId) {
+                        const feature = features.find(f => getFeatureKey(f) === location.featureId)
+                        if (feature?.geometry?.coordinates) {
+                          const [lng, lat] = feature.geometry.coordinates as [number, number]
+                          setRawOrigin([lng, lat])
+                          setOrigin([lng, lat], location.level)
+                          setOriginQuery(location.label)
+                        }
+                      } else {
+                        setRawOrigin(location.coords)
+                        setOrigin(location.coords, location.level)
+                        setOriginQuery(location.label)
+                      }
+                      recordRecentLocation(location)
+                      setOriginOpen(false)
+                      setOriginIdx(-1)
+                    }}
+                  />
+                ))}
                 {/* QR scan as first option (mobile only, when nothing typed) */}
                 {!originQuery && isMobile && (
                   <DropItem
@@ -1001,6 +1182,28 @@ export default function App() {
                 ...glassStyle(isDark, { padding: '6px', position: 'absolute', top: '100%', left: 0, right: 0, marginTop: 6, zIndex: 50, maxHeight: isMobile ? 200 : 264, overflowY: 'auto' }),
                 animation: 'dropdown-in 0.18s cubic-bezier(0.34,1.26,0.64,1) forwards',
               }}>
+                {recentDestItems.map((location, i) => (
+                  <DropItem
+                    key={location.key}
+                    name={location.label}
+                    sub={location.subtitle}
+                    type="recent"
+                    isActive={destIdx === -2 - i}
+                    onHover={() => setDestIdx(-2 - i)}
+                    onClick={() => {
+                      if (location.kind === 'feature' && location.featureId) {
+                        setDestination(location.featureId)
+                        setDestQuery(location.label)
+                      } else {
+                        setDestination(`coord:${location.coords[0]},${location.coords[1]},${location.level}`)
+                        setDestQuery(location.label)
+                      }
+                      recordRecentLocation(location)
+                      setDestOpen(false)
+                      setDestIdx(-1)
+                    }}
+                  />
+                ))}
                 <DropItem
                   name="Pick location from map"
                   sub="Tap the map to set destination point"

@@ -18,6 +18,7 @@
 - [x] **Phase 4: Visitor UX Polish**
   - Destination search, turn-by-turn bottom sheet (now integrated inline), dark mode, responsive UI, curved route smoothing.
   - [x] Mobile view horizontal level selector.
+    - [x] Persist the two most recently selected start/destination locations in cookies and show them first in both search dropdowns.
 
 - [ ] **Phase 5: Admin Tools**
     - Auth gate setup.

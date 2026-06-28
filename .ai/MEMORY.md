@@ -15,6 +15,7 @@
 - 2026-06-28: Removed Route Details stats in search panel for mobile view to prevent obscuring map.
 - 2026-06-28: Collapsed search panel to a single-line pill when route is active on mobile. Added touchstart handler to support outside click collapse on mobile, and removed the expand/flip button from the collapsed card.
 - 2026-06-28: Added building and floor information below place names in inputs (when selected) and in the collapsed mobile pill layout.
+- 2026-06-28: Stored the 2 most recently selected origin/destination locations in a cookie and surface them first in both dropdown search lists.
 
 ## Technical Decisions & Lessons Learned
 
