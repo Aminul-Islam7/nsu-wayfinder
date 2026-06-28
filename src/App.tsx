@@ -1141,10 +1141,10 @@ export default function App() {
             }}>
               <ArrowUpDown size={13} color="#8b5cf6" />
             </div>
-            <span style={{ fontSize: 12, fontWeight: 600, color: '#8b5cf6', lineHeight: 1.3 }}>
+            <span style={{ fontSize: 12, fontWeight: 600, color: isDark ? '#e5d4ff' : '#7c3aed', lineHeight: 1.3 }}>
               Take lift/stairs to{' '}
               {routeStats.transitions.map((t, i) => (
-                <span key={i}>{i > 0 ? ', then ' : ''}Level {t.to}</span>
+                <span key={i} style={{ color: '#a78bfa', fontWeight: 700 }}>{i > 0 ? ', then ' : ''}Level {t.to}</span>
               ))}
             </span>
           </div>
