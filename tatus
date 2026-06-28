@@ -1,0 +1,20 @@
+[33m369a773[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mShahriar[m[33m)[m config: add development server HMR configuration
+[33m4a7ee21[m ui: remove redundant 'Show route' text from collapsed route pill
+[33mc694b76[m feat: add comprehensive error overlay and logging system
+[33mfa2afe1[m style: format index.css with improved structure and tabs
+[33m0d56721[m style: format supabase client and store to consistent tabs
+[33m91b994a[m style: format useDeviceOrientation.ts to use consistent tabs
+[33mbd4d646[m style: format MapCanvas.tsx to use consistent tabs
+[33m0cd5aca[m[33m ([m[1;31morigin/main[m[33m, [m[1;31morigin/HEAD[m[33m, [m[1;32mmobile-ui-polish[m[33m, [m[1;32mmain[m[33m)[m feat(ui): center swap & auto-select starting level
+[33mf26975a[m docs(memory): document selection swap implementation
+[33mf2f45fb[m feat(ui): add swap start and destination selections button
+[33m9592756[m docs(memory): document active level URL sync
+[33me753fe8[m feat(url): synchronize active level in url parameters
+[33m7eeca20[m docs(memory): document route animation switch fix
+[33m8f42480[m fix(map): prevent route animation replay on level switch
+[33m9164fa6[m feat(map): animate route line drawing smoothly
+[33ma77f3e6[m feat(routing): smooth path segments with curved joins
+[33m337cc53[m fix(routing): prevent detours by snapping multiple points together
+[33mfed295e[m fix(ui): resolve search box and map interaction bugs
+[33mc38e814[m fix(routing): use undirectedEdge instead of non-existent findUndirectedEdge
+[33m893db64[m fix(routing): staircase-only transit, exact pairing via connects_to, optimal selection via Dijkstra cost

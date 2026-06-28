@@ -8,30 +8,94 @@ import {
   ChevronRight, AlertTriangle, Footprints
 } from 'lucide-react'
 
-const StairsIcon = ({ size = 14 }: { size?: number }) => (
-  <svg width={size} height={size} viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5"
-    fill="none" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M19 20H13V15H8V10H3V4" />
-  </svg>
-)
-
-function haversine(c1: [number, number], c2: [number, number]) {
-  const R = 6371e3
-  const dLat = (c2[1] - c1[1]) * Math.PI / 180
-  const dLon = (c2[0] - c1[0]) * Math.PI / 180
-  const a = Math.sin(dLat / 2) ** 2 + Math.cos(c1[1] * Math.PI / 180) * Math.cos(c2[1] * Math.PI / 180) * Math.sin(dLon / 2) ** 2
-  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
+// Local haversine helper (meters)
+function haversine(a: [number, number], b: [number, number]): number {
+	const [lon1, lat1] = a;
+	const [lon2, lat2] = b;
+	const R = 6371e3;
+	const phi1 = (lat1 * Math.PI) / 180;
+	const phi2 = (lat2 * Math.PI) / 180;
+	const dPhi = ((lat2 - lat1) * Math.PI) / 180;
+	const dLam = ((lon2 - lon1) * Math.PI) / 180;
+	const s = Math.sin(dPhi / 2) ** 2 + Math.cos(phi1) * Math.cos(phi2) * Math.sin(dLam / 2) ** 2;
+	return R * 2 * Math.atan2(Math.sqrt(s), Math.sqrt(1 - s));
 }
 
+// ─────────────────────────────────────────────────────────────────
+// PROFESSIONAL DESIGN TOKENS (NSU Wayfinder - Google Maps Style)
+// ─────────────────────────────────────────────────────────────────
+const DESIGN_TOKENS = {
+	colors: {
+		light: {
+			bg: '#ffffff',
+			surface: '#f8f9fa',
+			text: '#202124',
+			secondary: '#5f6368',
+			tertiary: '#9aa0a6',
+			divider: '#e8eaed',
+			primary: '#003DA5', // NSU Blue
+			accent: '#00A86B', // NSU Green
+			success: '#10b981',
+			info: '#6366f1',
+			action: '#f97316',
+		},
+		dark: {
+			bg: '#121212',
+			surface: '#1e1e1e',
+			text: '#e8eaed',
+			secondary: '#bdc1c6',
+			tertiary: '#80868b',
+			divider: '#303134',
+			primary: '#4a9eff', // Lighter NSU Blue for dark mode
+			accent: '#4ade80', // Lighter green for dark mode
+			success: '#10b981',
+			info: '#818cf8',
+			action: '#fb923c',
+		},
+	},
+	spacing: {
+		xs: 4,
+		sm: 8,
+		md: 12,
+		lg: 16,
+		xl: 24,
+		xxl: 32,
+	},
+	radius: {
+		sm: 8,
+		md: 12,
+		lg: 16,
+		full: 9999,
+	},
+	shadow: {
+		sm: '0 1px 2px rgba(0,0,0,0.05)',
+		md: '0 4px 12px rgba(0,0,0,0.08)',
+		lg: '0 8px 24px rgba(0,0,0,0.12)',
+		xl: '0 16px 40px rgba(0,0,0,0.16)',
+	},
+	transitions: {
+		fast: '150ms ease-out',
+		base: '200ms ease-out',
+		slow: '300ms cubic-bezier(0.4, 0, 0.2, 1)',
+	},
+};
+
+// Get colors based on dark mode
+function colors(isDark: boolean) {
+	return DESIGN_TOKENS.colors[isDark ? 'dark' : 'light'];
+}
+
+// POI color mapping (for markers and listings)
 const POI_COLORS: Record<string, { bg: string; glow: string }> = {
-  transit:   { bg: '#10b981', glow: 'rgba(16,185,129,0.3)' },
-  classroom: { bg: '#6366f1', glow: 'rgba(99,102,241,0.3)' },
-  default:   { bg: '#f43f5e', glow: 'rgba(244,63,94,0.3)'  },
-}
+	transit: { bg: '#10b981', glow: 'rgba(16,185,129,0.3)' },
+	classroom: { bg: '#6366f1', glow: 'rgba(99,102,241,0.3)' },
+	default: { bg: '#f43f5e', glow: 'rgba(244,63,94,0.3)' },
+};
+
 function poiColor(type: string, category?: string) {
-  if (type === 'transit') return POI_COLORS.transit
-  if (category === 'classroom') return POI_COLORS.classroom
-  return POI_COLORS.default
+	if (type === 'transit') return POI_COLORS.transit;
+	if (category === 'classroom') return POI_COLORS.classroom;
+	return POI_COLORS.default;
 }
 
 const ALL_LEVELS: { value: Level; label: string }[] = [
@@ -68,27 +132,35 @@ function glassStyle(dark: boolean, extra?: React.CSSProperties): React.CSSProper
 
 // ─── Small reusable icon-box ──────────────────────────────────────
 function IconBox({ bg, glow, children }: { bg: string; glow: string; children: React.ReactNode }) {
-  return (
-    <div style={{
-      width: 32, height: 32, borderRadius: 10,
-      background: bg, boxShadow: `0 2px 8px ${glow}`,
-      display: 'flex', alignItems: 'center', justifyContent: 'center',
-      color: '#fff', flexShrink: 0,
-    }}>
-      {children}
-    </div>
-  )
+	return (
+		<div
+			style={{
+				width: 32,
+				height: 32,
+				borderRadius: 10,
+				background: bg,
+				boxShadow: `0 2px 8px ${glow}`,
+				display: 'flex',
+				alignItems: 'center',
+				justifyContent: 'center',
+				color: '#fff',
+				flexShrink: 0,
+			}}
+		>
+			{children}
+		</div>
+	);
 }
 
 // ─── Responsive hook ──────────────────────────────────────────────
 function useIsMobile() {
-  const [mobile, setMobile] = useState(() => window.innerWidth < 520)
-  useEffect(() => {
-    const fn = () => setMobile(window.innerWidth < 520)
-    window.addEventListener('resize', fn)
-    return () => window.removeEventListener('resize', fn)
-  }, [])
-  return mobile
+	const [mobile, setMobile] = useState(() => window.innerWidth < 520);
+	useEffect(() => {
+		const fn = () => setMobile(window.innerWidth < 520);
+		window.addEventListener('resize', fn);
+		return () => window.removeEventListener('resize', fn);
+	}, []);
+	return mobile;
 }
 
 // ═══════════════════════════════════════════════════════════════════
