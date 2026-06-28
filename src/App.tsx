@@ -120,6 +120,11 @@ export default function App() {
 
   const isMobile = useIsMobile()
 
+  const getMobileLabel = (value: number) => {
+    if (value < 0) return `B${Math.abs(value)}`;
+    return `L${value}`;
+  }
+
   // ── Theme ────────────────────────────────────────────────────────
   const [isDark, setIsDark] = useState(() =>
     document.documentElement.classList.contains('dark') ||
@@ -150,7 +155,7 @@ export default function App() {
   useEffect(() => {
     const activeBtn = levelRefs.current[activeLevel]
     if (activeBtn) {
-      activeBtn.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+      activeBtn.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' })
     }
   }, [activeLevel])
 
@@ -573,7 +578,7 @@ export default function App() {
   // Right rail: on mobile push it to bottom-right above route sheet
   const railRight     = 12
   const railTop       = isMobile ? undefined : (16 + adminOffset)
-  const railBottom    = isMobile ? 24 : undefined
+  const railBottom    = isMobile ? 12 : undefined
 
   // ═════════════════════════════════════════════════════════════════
   return (
@@ -906,31 +911,38 @@ export default function App() {
       {/* ═══ RIGHT RAIL — theme toggle + level pill ════════════════ */}
       <div style={{
         position: 'absolute',
-        top: railTop,
-        bottom: railBottom,
-        right: railRight,
+        left: isMobile ? 12 : undefined,
+        right: isMobile ? 12 : railRight,
+        top: isMobile ? undefined : railTop,
+        bottom: isMobile ? 12 : railBottom,
+        width: isMobile ? 'calc(100vw - 24px)' : undefined,
         zIndex: 40,
         display: 'flex',
-        flexDirection: 'column',
+        flexDirection: isMobile ? 'row' : 'column',
         alignItems: 'center',
         gap: 10,
       }}>
 
         {/* Combined Control Panel (theme + levels) */}
         <div style={glassStyle(isDark, {
-          display: 'flex', flexDirection: 'column', alignItems: 'center',
-          padding: '6px', gap: 6,
+          display: 'flex',
+          flexDirection: isMobile ? 'row' : 'column',
+          alignItems: 'center',
+          padding: '6px',
+          gap: 6,
+          width: isMobile ? '100%' : undefined,
         })}>
           {/* Dark / light toggle */}
           <button
             title={isDark ? 'Switch to light mode' : 'Switch to dark mode'}
             onClick={() => setIsDark(d => !d)}
             style={{
-              width: isMobile ? 48 : 46, height: isMobile ? 48 : 46, borderRadius: 12,
+              width: isMobile ? 40 : 46, height: isMobile ? 40 : 46, borderRadius: 12,
               display: 'flex', alignItems: 'center', justifyContent: 'center',
               cursor: 'pointer', border: 'none', background: 'transparent',
               color: isDark ? '#fbbf24' : '#6e6e73',
               transition: 'all 0.22s cubic-bezier(0.34,1.26,0.64,1)',
+              flexShrink: 0,
             }}
             onMouseEnter={(e) => e.currentTarget.style.background = hov}
             onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
@@ -939,24 +951,35 @@ export default function App() {
           </button>
 
           {/* Divider */}
-          <div style={{ height: 1, width: 24, background: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)', margin: '4px 0' }} />
+          <div style={{
+            height: isMobile ? 24 : 1,
+            width: isMobile ? 1 : 24,
+            background: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)',
+            margin: isMobile ? '0 4px' : '4px 0',
+            flexShrink: 0,
+          }} />
 
           {/* Level selector */}
-          <div style={{
-            display: 'flex', flexDirection: 'column', gap: 8,
-            maxHeight: isMobile ? 'calc(100svh - 180px)' : 'calc(100svh - 160px)', overflowY: 'auto',
-            paddingLeft: 4,
-            paddingRight: 6,
-            paddingTop: 8,
-            paddingBottom: 8,
+          <div className="no-scrollbar" style={{
+            display: 'flex', 
+            flexDirection: isMobile ? 'row' : 'column', 
+            gap: 8,
+            maxHeight: isMobile ? undefined : 'calc(100svh - 160px)', 
+            maxWidth: isMobile ? 'calc(100vw - 120px)' : undefined,
+            overflowY: isMobile ? 'hidden' : 'auto',
+            overflowX: isMobile ? 'auto' : 'hidden',
+            paddingLeft: isMobile ? 8 : 4,
+            paddingRight: isMobile ? 8 : 6,
+            paddingTop: isMobile ? 4 : 8,
+            paddingBottom: isMobile ? 4 : 8,
           }}>
-             {ALL_LEVELS.map(lvl => (
+             {(isMobile ? [...ALL_LEVELS].reverse() : ALL_LEVELS).map(lvl => (
               <button
                 key={lvl.value}
                 ref={el => { levelRefs.current[lvl.value] = el }}
                 onClick={() => setActiveLevel(lvl.value)}
                 style={{
-                  width: isMobile ? 48 : 46, height: isMobile ? 48 : 40, borderRadius: 12,
+                  width: isMobile ? 44 : 46, height: isMobile ? 40 : 40, borderRadius: 12,
                   display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
                   gap: 2, cursor: 'pointer', border: 'none',
                   flexShrink: 0,
@@ -967,8 +990,12 @@ export default function App() {
                   transition: 'all 0.22s cubic-bezier(0.34,1.26,0.64,1)',
                   fontFamily: 'inherit',
                 }}>
-                <span style={{ fontSize: 15, fontWeight: 800, lineHeight: 1 }}>{lvl.label}</span>
-                <span style={{ fontSize: 8, fontWeight: 600, opacity: 0.75, lineHeight: 1 }}>LEVEL</span>
+                <span style={{ fontSize: isMobile ? 14 : 15, fontWeight: 800, lineHeight: 1 }}>
+                  {isMobile ? getMobileLabel(lvl.value) : lvl.label}
+                </span>
+                {!isMobile && (
+                  <span style={{ fontSize: 8, fontWeight: 600, opacity: 0.75, lineHeight: 1 }}>LEVEL</span>
+                )}
               </button>
             ))}
           </div>
