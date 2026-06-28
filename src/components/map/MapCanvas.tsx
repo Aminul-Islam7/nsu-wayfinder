@@ -118,7 +118,20 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
 		const totalSeconds = Math.round(distM / 1.2);
 		const mins = Math.floor(totalSeconds / 60);
 		const secs = totalSeconds % 60;
-		const timeStr = mins > 0 ? (secs > 0 ? `${mins} min ${secs} sec` : `${mins} min`) : `${secs} sec`;
+
+		let timeStr = '';
+		if (mins === 0) {
+			timeStr = `${totalSeconds} sec`;
+		} else {
+			if (secs <= 10) {
+				timeStr = `${mins} min`;
+			} else if (secs >= 50) {
+				timeStr = `${mins + 1} min`;
+			} else {
+				timeStr = `${mins} m ${secs} s`;
+			}
+		}
+
 		const distStr = distM < 1000 ? `${Math.round(distM)} m` : `${(distM / 1000).toFixed(1)} km`;
 		return { timeStr, distStr };
 	}, [route.routeCoordinates]);
@@ -632,7 +645,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
 									<span style={{ fontSize: '11px', fontWeight: 800, color: '#ffffff', lineHeight: 1.1 }}>
 										{routeStats.timeStr}
 									</span>
-									<span style={{ fontSize: '10px', fontWeight: 600, color: 'rgba(255, 255, 255, 0.8)', lineHeight: 1.1 }}>
+									<span style={{ fontSize: '11px', fontWeight: 600, color: 'rgba(255, 255, 255, 0.8)', lineHeight: 1.1 }}>
 										{routeStats.distStr}
 									</span>
 								</div>
@@ -641,9 +654,9 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
 								style={{
 									width: 0,
 									height: 0,
-									borderLeft: '5px solid transparent',
-									borderRight: '5px solid transparent',
-									borderTop: '5px solid rgba(37, 99, 235, 0.88)',
+									borderLeft: '7px solid transparent',
+									borderRight: '7px solid transparent',
+									borderTop: '7px solid rgba(37, 99, 235, 0.88)',
 									marginTop: '-1px',
 									filter: 'drop-shadow(0 1px 1px rgba(0,0,0,0.06))',
 								}}

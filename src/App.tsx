@@ -413,9 +413,7 @@ export default function App() {
         transitions.push({ from: prev, to: curr })
     }
 
-    const timeStr = mins > 0 ? (secs > 0 ? `${mins} min ${secs} sec` : `${mins} min`) : `${secs} sec`
-
-    return { distStr, timeStr, transitions, destName }
+    return { distStr, mins, secs, transitions, destName }
   }, [route.routeCoordinates, route.destination, features])
 
   const hasRoute  = !!(route.destination && route.routeCoordinates.length > 0)
@@ -839,7 +837,8 @@ export default function App() {
                   </div>
                   <div>
                     <div style={{ fontSize: 16, fontWeight: 700, color: text, lineHeight: 1, whiteSpace: 'nowrap' }}>
-                      {routeStats.timeStr}
+                      {routeStats.mins > 0 && <>{routeStats.mins}<span style={{ fontSize: 11, fontWeight: 600, marginLeft: 1, marginRight: 3 }}>m</span></>}
+                      {routeStats.secs}<span style={{ fontSize: 11, fontWeight: 600, marginLeft: 1 }}>s</span>
                     </div>
                     <div style={{ fontSize: 9, color: faint, marginTop: 2, fontWeight: 500 }}>walking</div>
                   </div>
