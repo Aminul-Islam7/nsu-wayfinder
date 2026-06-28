@@ -4,7 +4,7 @@ import type { MapMouseEvent } from 'react-map-gl/maplibre';
 import maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { useStore } from '../../store/useStore';
-import { GraduationCap, MapPin, ArrowUpDown, Info, Footprints } from 'lucide-react';
+import { GraduationCap, MapPin, ArrowUpDown, Info } from 'lucide-react';
 import { computeShortestPath } from '../../lib/routing';
 
 interface MapCanvasProps {
@@ -615,23 +615,27 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
 									WebkitBackdropFilter: 'blur(20px) saturate(190%)',
 									border: '1px solid rgba(255, 255, 255, 0.18)',
 									borderRadius: '8px',
-									padding: '5px 9px',
+									padding: '6px 10px',
 									boxShadow: '0 4px 12px rgba(37, 99, 235, 0.25)',
 									display: 'flex',
-									flexDirection: 'column',
+									flexDirection: 'row',
 									alignItems: 'center',
-									gap: '2px',
+									gap: '8px',
 								}}
 							>
-								<div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-									<Footprints size={11} color="#ffffff" style={{ opacity: 0.95 }} />
+								{/* Walking Person SVG Icon (Left side) */}
+								<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style={{ color: '#ffffff', flexShrink: 0 }}>
+									<path d="M13.5 5.5c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 .9 2 2 2zM9.8 8.9L7 23h2.1l1.8-8 2.1 2v6h2v-7.5l-2.1-2 .6-3C15.6 12.2 17.8 13 19 13v-2c-1.9 0-3.5-1-4.3-2.4l-1-1.6c-.4-.6-1-1-1.7-1-.3 0-.5.1-.8.1L6 8.3V13h2V9.6l1.8-.7" />
+								</svg>
+								{/* Stats Column (Right side, left-aligned) */}
+								<div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: '1px' }}>
 									<span style={{ fontSize: '11px', fontWeight: 800, color: '#ffffff', lineHeight: 1.1 }}>
 										{routeStats.timeStr}
 									</span>
+									<span style={{ fontSize: '9px', fontWeight: 600, color: 'rgba(255, 255, 255, 0.8)', lineHeight: 1.1 }}>
+										{routeStats.distStr}
+									</span>
 								</div>
-								<span style={{ fontSize: '9px', fontWeight: 600, color: 'rgba(255, 255, 255, 0.8)', lineHeight: 1.1 }}>
-									{routeStats.distStr}
-								</span>
 							</div>
 							<div
 								style={{
