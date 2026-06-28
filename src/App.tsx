@@ -413,7 +413,7 @@ export default function App() {
         transitions.push({ from: prev, to: curr })
     }
 
-    const timeStr = mins > 0 ? (secs >= 30 ? `>${mins} min` : `${mins} min`) : `${secs} sec`
+    const timeStr = mins > 0 ? (secs > 0 ? `${mins} min ${secs} sec` : `${mins} min`) : `${secs} sec`
 
     return { distStr, timeStr, transitions, destName }
   }, [route.routeCoordinates, route.destination, features])

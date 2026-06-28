@@ -118,7 +118,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
 		const totalSeconds = Math.round(distM / 1.2);
 		const mins = Math.floor(totalSeconds / 60);
 		const secs = totalSeconds % 60;
-		const timeStr = mins > 0 ? (secs >= 30 ? `>${mins} min` : `${mins} min`) : `${secs} sec`;
+		const timeStr = mins > 0 ? (secs > 0 ? `${mins} min ${secs} sec` : `${mins} min`) : `${secs} sec`;
 		const distStr = distM < 1000 ? `${Math.round(distM)} m` : `${(distM / 1000).toFixed(1)} km`;
 		return { timeStr, distStr };
 	}, [route.routeCoordinates]);
@@ -620,7 +620,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
 									display: 'flex',
 									flexDirection: 'row',
 									alignItems: 'center',
-									gap: '8px',
+									gap: '6px',
 								}}
 							>
 								{/* Walking Person SVG Icon (Left side) */}
@@ -632,7 +632,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
 									<span style={{ fontSize: '11px', fontWeight: 800, color: '#ffffff', lineHeight: 1.1 }}>
 										{routeStats.timeStr}
 									</span>
-									<span style={{ fontSize: '9px', fontWeight: 600, color: 'rgba(255, 255, 255, 0.8)', lineHeight: 1.1 }}>
+									<span style={{ fontSize: '10px', fontWeight: 600, color: 'rgba(255, 255, 255, 0.8)', lineHeight: 1.1 }}>
 										{routeStats.distStr}
 									</span>
 								</div>
