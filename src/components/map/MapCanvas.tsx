@@ -10,9 +10,6 @@ import { computeShortestPath } from '../../lib/routing'
 interface MapCanvasProps {
   isDark: boolean
   pickingFromMap?: boolean
-  heading?: number | null      // compass heading 0-360, 0=north CW
-  gpsActive?: boolean          // whether GPS is live
-  trackingEnabled?: boolean    // whether sensor tracking is on
 }
 
 // Custom Stairs SVG Icon
@@ -52,8 +49,6 @@ const MAP_STYLE_DARK = 'https://basemaps.cartocdn.com/gl/dark-matter-gl-style/st
 export const MapCanvas: React.FC<MapCanvasProps> = ({
   isDark: isDarkMode,
   pickingFromMap = false,
-  heading = null,
-  gpsActive = false,
 }) => {
   const {
     activeLevel,
@@ -508,68 +503,16 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                 You {route.originLevel !== activeLevel && `(L${route.originLevel})`}
               </div>
 
-              {/* Dot + compass cone */}
-              <div style={{ position: 'relative', width: 42, height: 42, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-
-                {/* Compass heading cone — only when heading known */}
-                {heading != null && route.originLevel === activeLevel && (
-                  <div
-                    style={{
-                      position: 'absolute',
-                      width: 0,
-                      height: 0,
-                      borderLeft: '8px solid transparent',
-                      borderRight: '8px solid transparent',
-                      borderBottom: '22px solid rgba(37,99,235,0.55)',
-                      bottom: '50%',
-                      left: '50%',
-                      transformOrigin: 'bottom center',
-                      transform: `translateX(-50%) rotate(${heading}deg)`,
-                      transition: 'transform 0.25s cubic-bezier(0.34,1.26,0.64,1)',
-                      zIndex: 1,
-                    }}
-                  />
-                )}
-
-                {/* Accuracy ring (GPS active = solid, dead reckoning = dashed) */}
-                {route.originLevel === activeLevel && (
-                  <div
-                    style={{
-                      position: 'absolute',
-                      width: 36,
-                      height: 36,
-                      borderRadius: '50%',
-                      border: gpsActive
-                        ? '1.5px solid rgba(37,99,235,0.35)'
-                        : '1.5px dashed rgba(37,99,235,0.30)',
-                      background: 'rgba(37,99,235,0.08)',
-                    }}
-                  />
-                )}
-
-                {/* Ping ring */}
-                {route.originLevel === activeLevel && (
-                  <span
-                    style={{
-                      position: 'absolute',
-                      width: 18,
-                      height: 18,
-                      borderRadius: '50%',
-                      background: 'rgba(59,130,246,0.45)',
-                      animation: 'ping 1.6s cubic-bezier(0,0,0.2,1) infinite',
-                    }}
-                  />
-                )}
-
-                {/* Core blue dot */}
+              {/* Simple blue dot start marker */}
+              <div style={{ position: 'relative', width: 24, height: 24, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                 <div
                   style={{
-                    width: 16,
-                    height: 16,
+                    width: 15,
+                    height: 15,
                     borderRadius: '50%',
                     background: '#2563eb',
                     border: '2.5px solid #fff',
-                    boxShadow: '0 2px 8px rgba(37,99,235,0.55)',
+                    boxShadow: '0 2px 8px rgba(37,99,235,0.5)',
                     position: 'relative',
                     zIndex: 2,
                     display: 'flex',
@@ -577,7 +520,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                     justifyContent: 'center',
                   }}
                 >
-                  <div style={{ width: 5, height: 5, borderRadius: '50%', background: '#fff' }} />
+                  <div style={{ width: 4, height: 4, borderRadius: '50%', background: '#fff' }} />
                 </div>
               </div>
             </div>

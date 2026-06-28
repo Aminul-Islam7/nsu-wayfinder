@@ -1,7 +1,7 @@
 import { create } from 'zustand'
 import { supabase } from '../lib/supabase'
 
-export type Level = 1 | 2
+export type Level = number
 
 export interface RouteState {
   origin: [number, number] | null   // [lng, lat] snapped start

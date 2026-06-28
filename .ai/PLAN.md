@@ -15,8 +15,8 @@
 - [x] **Phase 3: Multi-floor**
   - Transit edges, level switching, and overlaid visualization.
 
-- [/] **Phase 4: Visitor UX Polish**
-  - Destination search, turn-by-turn bottom sheet, dark mode, responsive UI, curved route smoothing.
+- [x] **Phase 4: Visitor UX Polish**
+  - Destination search, turn-by-turn bottom sheet (now integrated inline), dark mode, responsive UI, curved route smoothing.
 
 - [ ] **Phase 5: Admin Tools**
   - Auth gate setup.

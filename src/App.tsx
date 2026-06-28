@@ -2,15 +2,11 @@ import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { MapCanvas } from './components/map/MapCanvas'
 import { useStore } from './store/useStore'
 import type { Level } from './store/useStore'
-import { useDeviceOrientation } from './hooks/useDeviceOrientation'
-import { useDeadReckoning } from './hooks/useDeadReckoning'
-import { useGeolocation } from './hooks/useGeolocation'
 import {
   Search, X, MapPin, GraduationCap,
-  Sun, Moon, ArrowUpDown, Layers, Clock, Route,
-  ChevronRight, AlertTriangle, Footprints, Radio
+  Sun, Moon, ArrowUpDown, Clock,
+  ChevronRight, AlertTriangle, Footprints
 } from 'lucide-react'
-import { nearestPointOnLine, point } from '@turf/turf'
 
 const StairsIcon = ({ size = 14 }: { size?: number }) => (
   <svg width={size} height={size} viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5"
@@ -37,6 +33,23 @@ function poiColor(type: string, category?: string) {
   if (category === 'classroom') return POI_COLORS.classroom
   return POI_COLORS.default
 }
+
+const ALL_LEVELS: { value: Level; label: string }[] = [
+  { value: 11, label: '11' },
+  { value: 10, label: '10' },
+  { value: 9,  label: '9' },
+  { value: 8,  label: '8' },
+  { value: 7,  label: '7' },
+  { value: 6,  label: '6' },
+  { value: 5,  label: '5' },
+  { value: 4,  label: '4' },
+  { value: 3,  label: '3' },
+  { value: 2,  label: '2' },
+  { value: 1,  label: '1' },
+  { value: -1, label: 'B1' },
+  { value: -2, label: 'B2' },
+  { value: -3, label: 'B3' },
+]
 
 // ─── Glass style factories (always inline — never Tailwind) ───────
 function glassStyle(dark: boolean, extra?: React.CSSProperties): React.CSSProperties {
@@ -85,8 +98,6 @@ export default function App() {
     features, isLoading,
     route, setDestination, setOrigin, setRawOrigin, setRouteCoordinates,
     isAdminMode,
-    trackingEnabled, setTrackingEnabled,
-    gpsActive, setGpsActive,
   } = useStore()
 
   const isMobile = useIsMobile()
@@ -115,90 +126,17 @@ export default function App() {
   const [pickMode,    setPickMode]    = useState<'origin' | 'dest' | false>(false)
 
   const panelRef = useRef<HTMLDivElement>(null)
+  const levelRefs = useRef<Record<number, HTMLButtonElement | null>>({})
 
-  // ── Compass / orientation ─────────────────────────────────────────
-  const { heading, hasCompass, permissionGranted: compassGranted, requestPermission: reqCompass } = useDeviceOrientation()
-
-  // ── GPS tracking ─────────────────────────────────────────────────
-  // Last GPS fix accuracy — prefer GPS when accuracy < 30m, else dead reckon
-  const gpsAccRef = useRef<number>(Infinity)
-
-  const handleGpsPosition = useCallback((lng: number, lat: number, accuracy: number) => {
-    gpsAccRef.current = accuracy
-    const isGoodFix = accuracy < 50
-    setGpsActive(isGoodFix)
-
-    if (isGoodFix) {
-      // Snap to nearest path and update origin
-      setRawOrigin([lng, lat])
-      const originLvl = (route.originLevel ?? activeLevel) as Level
-      const levelPaths = features.filter(
-        f => f.geometry && f.properties?.type === 'path' && f.properties?.level === originLvl
-      )
-      if (levelPaths.length > 0) {
-        try {
-          const pt = point([lng, lat])
-          let minDist = Infinity
-          let snapped: [number, number] | null = null
-          for (const pf of levelPaths) {
-            const s = nearestPointOnLine(pf, pt)
-            const d = s.properties?.dist ?? Infinity
-            if (d < minDist) { minDist = d; snapped = s.geometry.coordinates as [number, number] }
-          }
-          if (snapped) setOrigin(snapped, originLvl)
-        } catch { /* ignore snap error */ }
-      } else {
-        setOrigin([lng, lat], originLvl)
-      }
-    }
-  }, [features, activeLevel, route.originLevel, setGpsActive, setRawOrigin, setOrigin])
-
-  useGeolocation({ enabled: trackingEnabled, onPosition: handleGpsPosition })
-
-  // ── Dead reckoning (kicks in when GPS unavailable / indoors) ─────
-  const currentPos = route.rawOrigin ?? route.origin ?? null
-
-  const handleDrPosition = useCallback((lng: number, lat: number) => {
-    // Only use dead reckoning when GPS is poor
-    if (gpsAccRef.current < 50) return
-    setGpsActive(false)
-    setRawOrigin([lng, lat])
-    const originLvl = (route.originLevel ?? activeLevel) as Level
-    const levelPaths = features.filter(
-      f => f.geometry && f.properties?.type === 'path' && f.properties?.level === originLvl
-    )
-    if (levelPaths.length > 0) {
-      try {
-        const pt = point([lng, lat])
-        let minDist = Infinity
-        let snapped: [number, number] | null = null
-        for (const pf of levelPaths) {
-          const s = nearestPointOnLine(pf, pt)
-          const d = s.properties?.dist ?? Infinity
-          if (d < minDist) { minDist = d; snapped = s.geometry.coordinates as [number, number] }
-        }
-        if (snapped) setOrigin(snapped, originLvl)
-      } catch { /* ignore */ }
-    } else {
-      setOrigin([lng, lat], originLvl)
-    }
-  }, [gpsAccRef, features, activeLevel, route.originLevel, setGpsActive, setRawOrigin, setOrigin])
-
-  useDeadReckoning({
-    enabled: trackingEnabled && !gpsActive,
-    heading,
-    onPositionUpdate: handleDrPosition,
-    initialPosition: currentPos,
-  })
-
-  // ── Auto-request iOS orientation permission on first interaction ─
+  // ── Auto-scroll active level into view ────────────────────────────
   useEffect(() => {
-    if (!compassGranted) {
-      const fn = () => { reqCompass(); document.removeEventListener('touchstart', fn) }
-      document.addEventListener('touchstart', fn, { once: true })
-      return () => document.removeEventListener('touchstart', fn)
+    const activeBtn = levelRefs.current[activeLevel]
+    if (activeBtn) {
+      activeBtn.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
     }
-  }, [compassGranted, reqCompass])
+  }, [activeLevel])
+
+
 
   // ── Sync labels ──────────────────────────────────────────────────
   useEffect(() => {
@@ -291,7 +229,7 @@ export default function App() {
 
     if (levelParam) {
       const lvl = parseInt(levelParam, 10) as Level
-      if (lvl === 1 || lvl === 2) {
+      if (!isNaN(lvl) && ALL_LEVELS.some(l => l.value === lvl)) {
         setActiveLevel(lvl)
       }
     }
@@ -617,7 +555,7 @@ export default function App() {
   // Right rail: on mobile push it to bottom-right above route sheet
   const railRight     = 12
   const railTop       = isMobile ? undefined : (16 + adminOffset)
-  const railBottom    = isMobile ? (hasRoute ? 180 : 24) : undefined
+  const railBottom    = isMobile ? 24 : undefined
 
   // ═════════════════════════════════════════════════════════════════
   return (
@@ -628,9 +566,6 @@ export default function App() {
         <MapCanvas
           isDark={isDark}
           pickingFromMap={!!pickMode}
-          heading={hasCompass ? heading : null}
-          gpsActive={gpsActive}
-          trackingEnabled={trackingEnabled}
         />
       </div>
 
@@ -667,45 +602,7 @@ export default function App() {
         <div style={glassStyle(isDark, { padding: '8px 6px 6px' })}>
 
           {/* Brand header */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '4px 10px 8px' }}>
-            <div style={{
-              width: 24, height: 24, borderRadius: 8, flexShrink: 0,
-              background: 'linear-gradient(135deg,#2563eb,#7c3aed)',
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-            }}>
-              <Footprints size={12} color="#fff" />
-            </div>
-            <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.12em', textTransform: 'uppercase', color: faint }}>
-              NSU Wayfinder
-            </span>
 
-            {/* Tracking pill — right-aligned */}
-            <div style={{ marginLeft: 'auto' }}>
-              <button
-                title={trackingEnabled ? (gpsActive ? 'GPS active' : 'Sensor tracking (GPS unavailable)') : 'Start location tracking'}
-                onClick={() => setTrackingEnabled(!trackingEnabled)}
-                style={{
-                  display: 'flex', alignItems: 'center', gap: 5,
-                  padding: '4px 8px', borderRadius: 20, border: 'none', cursor: 'pointer',
-                  background: trackingEnabled
-                    ? (gpsActive ? 'rgba(16,185,129,0.15)' : 'rgba(37,99,235,0.12)')
-                    : (isDark ? 'rgba(255,255,255,0.07)' : 'rgba(0,0,0,0.05)'),
-                  transition: 'all 0.2s ease',
-                }}>
-                <Radio
-                  size={11}
-                  color={trackingEnabled ? (gpsActive ? '#10b981' : '#2563eb') : faint}
-                  style={{ animation: trackingEnabled ? 'glow-ping 2s ease infinite' : 'none' }}
-                />
-                <span style={{
-                  fontSize: 10, fontWeight: 600,
-                  color: trackingEnabled ? (gpsActive ? '#10b981' : '#2563eb') : faint,
-                }}>
-                  {trackingEnabled ? (gpsActive ? 'GPS' : 'Sensor') : 'Tracking off'}
-                </span>
-              </button>
-            </div>
-          </div>
 
           {/* ── Origin input row ───────────────────────────────────── */}
           <div style={{ position: 'relative' }}>
@@ -902,6 +799,69 @@ export default function App() {
             )}
           </div>
 
+          {/* ── Route info (integrated) ────────────────────────────── */}
+          {hasRoute && routeStats && (
+            <div className="route-info-enter">
+              {/* Divider */}
+              <div style={{ height: 1, background: isDark ? 'rgba(255,255,255,0.07)' : 'rgba(0,0,0,0.07)', margin: '16px 10px 14px' }} />
+
+              {/* Separation Label */}
+              <div style={{ fontSize: 9, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: faint, padding: '0 12px 10px' }}>
+                Route Details
+              </div>
+
+              {/* Stats */}
+              <div style={{ display: 'flex', alignItems: 'stretch', padding: '0 12px 10px', gap: 16 }}>
+                {/* Time */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, flex: 1 }}>
+                  <div style={{ width: 32, height: 32, borderRadius: 8, background: isDark ? 'rgba(59,130,246,0.15)' : 'rgba(37,99,235,0.08)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                    <Clock size={15} color="#3b82f6" />
+                  </div>
+                  <div>
+                    <div style={{ fontSize: 16, fontWeight: 700, color: text, lineHeight: 1, whiteSpace: 'nowrap' }}>
+                      {routeStats.mins > 0 && <>{routeStats.mins}<span style={{ fontSize: 11, fontWeight: 600, marginLeft: 1, marginRight: 3 }}>m</span></>}
+                      {routeStats.secs}<span style={{ fontSize: 11, fontWeight: 600, marginLeft: 1 }}>s</span>
+                    </div>
+                    <div style={{ fontSize: 9, color: faint, marginTop: 2, fontWeight: 500 }}>walking</div>
+                  </div>
+                </div>
+
+                <div style={{ width: 1, background: isDark ? 'rgba(255,255,255,0.07)' : 'rgba(0,0,0,0.07)' }} />
+
+                {/* Distance */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, flex: 1 }}>
+                  <div style={{ width: 32, height: 32, borderRadius: 8, background: isDark ? 'rgba(16,185,129,0.15)' : 'rgba(16,185,129,0.08)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                    <Footprints size={15} color="#10b981" />
+                  </div>
+                  <div>
+                    <div style={{ fontSize: 16, fontWeight: 700, color: text, lineHeight: 1 }}>{routeStats.distStr}</div>
+                    <div style={{ fontSize: 9, color: faint, marginTop: 2, fontWeight: 500 }}>distance</div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Level change hint */}
+              {routeStats.transitions.length > 0 && (
+                <>
+                  <div style={{ height: 1, background: isDark ? 'rgba(255,255,255,0.07)' : 'rgba(0,0,0,0.07)', margin: '0 10px 10px' }} />
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '0 12px 12px' }}>
+                    <div style={{ width: 28, height: 28, borderRadius: 8, background: isDark ? 'rgba(139,92,246,0.15)' : 'rgba(139,92,246,0.08)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                      <ArrowUpDown size={14} color="#8b5cf6" />
+                    </div>
+                    <span style={{ fontSize: 12, fontWeight: 500, color: text }}>
+                      Take lift/stairs to{' '}
+                      {routeStats.transitions.map((t, i) => (
+                        <strong key={i} style={{ color: '#8b5cf6' }}>
+                          {i > 0 ? ', then ' : ''}Level {t.to}
+                        </strong>
+                      ))}
+                    </span>
+                  </div>
+                </>
+              )}
+            </div>
+          )}
+
           {/* Bottom inner spacing */}
           <div style={{ height: 2 }} />
         </div>
@@ -928,162 +888,64 @@ export default function App() {
         gap: 10,
       }}>
 
-        {/* Dark / light toggle */}
-        <button
-          title={isDark ? 'Switch to light mode' : 'Switch to dark mode'}
-          onClick={() => setIsDark(d => !d)}
-          style={{
-            ...glassStyle(isDark),
-            width: isMobile ? 48 : 46, height: isMobile ? 48 : 46, borderRadius: 14,
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            cursor: 'pointer', border: 'none',
-            color: isDark ? '#fbbf24' : '#6e6e73',
-            transition: 'all 0.22s cubic-bezier(0.34,1.26,0.64,1)',
-          }}>
-          {isDark ? <Sun size={18} /> : <Moon size={18} />}
-        </button>
-
-        {/* Level selector pill */}
+        {/* Combined Control Panel (theme + levels) */}
         <div style={glassStyle(isDark, {
           display: 'flex', flexDirection: 'column', alignItems: 'center',
-          padding: '8px 6px', gap: 4,
+          padding: '6px', gap: 6,
         })}>
-          {/* Label icon */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 4, paddingBottom: 4 }}>
-            <Layers size={12} color={faint} />
-          </div>
+          {/* Dark / light toggle */}
+          <button
+            title={isDark ? 'Switch to light mode' : 'Switch to dark mode'}
+            onClick={() => setIsDark(d => !d)}
+            style={{
+              width: isMobile ? 48 : 46, height: isMobile ? 48 : 46, borderRadius: 12,
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              cursor: 'pointer', border: 'none', background: 'transparent',
+              color: isDark ? '#fbbf24' : '#6e6e73',
+              transition: 'all 0.22s cubic-bezier(0.34,1.26,0.64,1)',
+            }}
+            onMouseEnter={(e) => e.currentTarget.style.background = hov}
+            onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+          >
+            {isDark ? <Sun size={18} /> : <Moon size={18} />}
+          </button>
 
-          {([2, 1] as Level[]).map(lvl => (
-            <button
-              key={lvl}
-              onClick={() => setActiveLevel(lvl)}
-              style={{
-                width: isMobile ? 48 : 46, height: isMobile ? 48 : 46, borderRadius: 12,
-                display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
-                gap: 2, cursor: 'pointer', border: 'none',
-                background: activeLevel === lvl ? '#2563eb' : 'transparent',
-                color: activeLevel === lvl ? '#ffffff' : sub,
-                boxShadow: activeLevel === lvl ? '0 3px 14px rgba(37,99,235,0.45)' : 'none',
-                transform: activeLevel === lvl ? 'scale(1.06)' : 'scale(1)',
-                transition: 'all 0.22s cubic-bezier(0.34,1.26,0.64,1)',
-                fontFamily: 'inherit',
-              }}>
-              <span style={{ fontSize: 15, fontWeight: 800, lineHeight: 1 }}>{lvl}</span>
-              <span style={{ fontSize: 8, fontWeight: 600, opacity: 0.75, lineHeight: 1 }}>LEVEL</span>
-            </button>
-          ))}
+          {/* Divider */}
+          <div style={{ height: 1, width: 24, background: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)', margin: '4px 0' }} />
+
+          {/* Level selector */}
+          <div style={{
+            display: 'flex', flexDirection: 'column', gap: 8,
+            maxHeight: isMobile ? 'calc(100svh - 180px)' : 'calc(100svh - 160px)', overflowY: 'auto',
+            paddingLeft: 4,
+            paddingRight: 6,
+            paddingTop: 8,
+            paddingBottom: 8,
+          }}>
+             {ALL_LEVELS.map(lvl => (
+              <button
+                key={lvl.value}
+                ref={el => { levelRefs.current[lvl.value] = el }}
+                onClick={() => setActiveLevel(lvl.value)}
+                style={{
+                  width: isMobile ? 48 : 46, height: isMobile ? 48 : 40, borderRadius: 12,
+                  display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+                  gap: 2, cursor: 'pointer', border: 'none',
+                  flexShrink: 0,
+                  background: activeLevel === lvl.value ? '#2563eb' : 'transparent',
+                  color: activeLevel === lvl.value ? '#ffffff' : sub,
+                  boxShadow: activeLevel === lvl.value ? '0 3px 14px rgba(37,99,235,0.45)' : 'none',
+                  transform: activeLevel === lvl.value ? 'scale(1.06)' : 'scale(1)',
+                  transition: 'all 0.22s cubic-bezier(0.34,1.26,0.64,1)',
+                  fontFamily: 'inherit',
+                }}>
+                <span style={{ fontSize: 15, fontWeight: 800, lineHeight: 1 }}>{lvl.label}</span>
+                <span style={{ fontSize: 8, fontWeight: 600, opacity: 0.75, lineHeight: 1 }}>LEVEL</span>
+              </button>
+            ))}
+          </div>
         </div>
       </div>
-
-      {/* ═══ BOTTOM ROUTE SHEET ════════════════════════════════════ */}
-      {hasRoute && routeStats && (
-        <div style={{
-          position: 'absolute', bottom: 0, left: 0, right: 0, zIndex: 40,
-          display: 'flex', justifyContent: 'center',
-          padding: isMobile ? '8px 12px 0' : '8px 16px 24px',
-          pointerEvents: 'none',
-        }}>
-          <div style={{
-            ...glassStyle(isDark, {
-              width: '100%', maxWidth: isMobile ? '100%' : 420,
-              animation: 'sheet-up 0.42s cubic-bezier(0.16,1,0.3,1) forwards',
-              pointerEvents: 'all',
-              padding: 0,
-              borderRadius: isMobile ? '20px 20px 0 0' : 20,
-            }),
-          }}>
-            {/* Drag handle */}
-            <div style={{ display: 'flex', justifyContent: 'center', paddingTop: 10, paddingBottom: 6 }}>
-              <div style={{ width: 36, height: 4, borderRadius: 99, background: isDark ? 'rgba(255,255,255,0.18)' : 'rgba(0,0,0,0.13)' }} />
-            </div>
-
-            {/* Destination header */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '4px 18px 14px' }}>
-              <div style={{
-                width: 42, height: 42, borderRadius: 14, flexShrink: 0,
-                background: 'linear-gradient(135deg,#2563eb,#7c3aed)',
-                boxShadow: '0 4px 16px rgba(37,99,235,0.35)',
-                display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff',
-              }}>
-                <Route size={20} />
-              </div>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.07em', textTransform: 'uppercase', color: faint, marginBottom: 2 }}>
-                  Navigating to
-                </div>
-                <div style={{ fontSize: 16, fontWeight: 700, color: text, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                  {routeStats.destName}
-                </div>
-              </div>
-              <button
-                onClick={() => { setDestination(null); setRouteCoordinates([]); setDestQuery('') }}
-                style={{
-                  width: 34, height: 34, borderRadius: 10, flexShrink: 0,
-                  display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  background: hov, color: sub, border: 'none', cursor: 'pointer',
-                }}>
-                <X size={15} />
-              </button>
-            </div>
-
-            {/* Divider */}
-            <div style={{ height: 1, background: isDark ? 'rgba(255,255,255,0.07)' : 'rgba(0,0,0,0.07)', margin: '0 18px' }} />
-
-            {/* Stats */}
-            <div style={{ display: 'flex', alignItems: 'stretch', padding: '14px 18px', gap: 16 }}>
-              {/* Time */}
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10, flex: 1 }}>
-                <div style={{ width: 36, height: 36, borderRadius: 10, background: isDark ? 'rgba(59,130,246,0.15)' : 'rgba(37,99,235,0.08)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                  <Clock size={17} color="#3b82f6" />
-                </div>
-                <div>
-                  <div style={{ fontSize: 20, fontWeight: 700, color: text, lineHeight: 1, whiteSpace: 'nowrap' }}>
-                    {routeStats.mins > 0 && <>{routeStats.mins}<span style={{ fontSize: 12, fontWeight: 600, marginLeft: 2, marginRight: 6 }}>min</span></>}
-                    {routeStats.secs}<span style={{ fontSize: 12, fontWeight: 600, marginLeft: 2 }}>sec</span>
-                  </div>
-                  <div style={{ fontSize: 10, color: faint, marginTop: 2 }}>walking</div>
-                </div>
-              </div>
-
-              <div style={{ width: 1, background: isDark ? 'rgba(255,255,255,0.07)' : 'rgba(0,0,0,0.07)' }} />
-
-              {/* Distance */}
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10, flex: 1 }}>
-                <div style={{ width: 36, height: 36, borderRadius: 10, background: isDark ? 'rgba(16,185,129,0.15)' : 'rgba(16,185,129,0.08)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                  <Footprints size={17} color="#10b981" />
-                </div>
-                <div>
-                  <div style={{ fontSize: 20, fontWeight: 700, color: text, lineHeight: 1 }}>{routeStats.distStr}</div>
-                  <div style={{ fontSize: 10, color: faint, marginTop: 2 }}>distance</div>
-                </div>
-              </div>
-            </div>
-
-            {/* Level change hint */}
-            {routeStats.transitions.length > 0 && (
-              <>
-                <div style={{ height: 1, background: isDark ? 'rgba(255,255,255,0.07)' : 'rgba(0,0,0,0.07)', margin: '0 18px' }} />
-                <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 18px' }}>
-                  <div style={{ width: 36, height: 36, borderRadius: 10, background: isDark ? 'rgba(139,92,246,0.15)' : 'rgba(139,92,246,0.08)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                    <ArrowUpDown size={17} color="#8b5cf6" />
-                  </div>
-                  <span style={{ fontSize: 13, fontWeight: 500, color: text }}>
-                    Take a lift or stairs to{' '}
-                    {routeStats.transitions.map((t, i) => (
-                      <strong key={i} style={{ color: '#8b5cf6' }}>
-                        {i > 0 ? ', then ' : ''}Level {t.to}
-                      </strong>
-                    ))}
-                  </span>
-                </div>
-              </>
-            )}
-
-            {/* Safe-area bottom padding for phones */}
-            <div style={{ height: 'env(safe-area-inset-bottom, 0px)', minHeight: isMobile ? 16 : 4 }} />
-          </div>
-        </div>
-      )}
     </div>
   )
 }
