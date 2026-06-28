@@ -371,3 +371,5 @@ Transit nodes (lifts/staircases) at the same physical XY on L1 and L2 (e.g. `nac
 - Filtered control icons in dark mode with `filter: invert(1) brightness(1.5)` for high visibility, and hid them on screen widths <= `768px` (mobile).
 - Placed a transparent glassmorphic speech bubble in `MapCanvas.tsx` at the middle coordinate of the route when animation finishes.
 - Styled the speech bubble with a blue background, white text, and a custom walking person SVG directions icon on the left of a left-aligned stats layout.
+- Formatted stats time output to show singular minutes and seconds combined (e.g. `1 min 14 sec`) on both search card and map speech bubble.
+- Polished bubble: Set gap between icon and stats to `6px` and increased distance text font size to `10px`.
