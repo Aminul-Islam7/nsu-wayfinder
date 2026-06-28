@@ -386,8 +386,10 @@ textarea:focus {
 	box-shadow: var(--glass-shadow) !important;
 	border-radius: 14px !important;
 	display: flex !important;
+	flex-direction: column !important;
 	width: auto !important;
 	height: auto !important;
+	overflow: hidden !important;
 }
 .maplibregl-ctrl-group button {
 	width: 44px !important;
@@ -395,16 +397,26 @@ textarea:focus {
 	border: none !important;
 	background: transparent !important;
 	color: var(--text-primary) !important;
-	display: inline-block !important;
+	display: flex !important;
+	align-items: center !important;
+	justify-content: center !important;
 	float: none !important;
 	margin: 0 !important;
 }
 .maplibregl-ctrl-group button + button {
-	border-left: 1px solid var(--divider) !important;
-	border-top: none !important;
+	border-top: 1px solid var(--divider) !important;
+	border-left: none !important;
 }
 .maplibregl-ctrl-group button:hover {
 	background: var(--hover-overlay) !important;
+}
+.dark .maplibregl-ctrl-icon {
+	filter: invert(1) brightness(1.5) !important;
+}
+@media (max-width: 768px) {
+	.maplibregl-ctrl-group {
+		display: none !important;
+	}
 }
 
 @theme inline {
