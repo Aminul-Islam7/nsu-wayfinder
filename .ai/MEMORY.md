@@ -12,6 +12,7 @@
 - 2026-06-27: Fixed CSS syntax error in index.css and resolved TypeScript compile error for unused heading prop in MapCanvas.tsx.
 - 2026-06-28: Simplified search panel overlay layout. Removed RECENTs, Quick Places, Favorites, sensor/gps-tracking, and app logo to satisfy design conciseness requests.
 - 2026-06-28: Refactored mobile level selector to be horizontal, scrollable, and concise at the bottom of the screen (B3 to L11). Added `.no-scrollbar` to hide scrollbars.
+- 2026-06-28: Removed Route Details stats in search panel for mobile view to prevent obscuring map.
 
 ## Technical Decisions & Lessons Learned
 

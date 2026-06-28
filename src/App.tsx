@@ -823,7 +823,7 @@ export default function App() {
           </div>
 
           {/* ── Route info (integrated) ────────────────────────────── */}
-          {hasRoute && routeStats && (
+          {hasRoute && routeStats && !isMobile && (
             <div className="route-info-enter">
               {/* Divider */}
               <div style={{ height: 1, background: isDark ? 'rgba(255,255,255,0.07)' : 'rgba(0,0,0,0.07)', margin: '16px 10px 14px' }} />
