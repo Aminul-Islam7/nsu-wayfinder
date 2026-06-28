@@ -1119,10 +1119,36 @@ export default function App() {
         width: isMobile ? 'calc(100vw - 24px)' : undefined,
         zIndex: 40,
         display: 'flex',
-        flexDirection: isMobile ? 'row' : 'column',
+        flexDirection: isMobile ? 'column' : 'column',
         alignItems: 'center',
-        gap: 10,
+        gap: isMobile ? 6 : 10,
       }}>
+
+        {/* ── Mobile transit hint (multistorey routes only) ─────────── */}
+        {isMobile && hasRoute && routeStats && routeStats.transitions.length > 0 && (
+          <div style={{
+            width: '100%',
+            display: 'flex', alignItems: 'center', gap: 8,
+            padding: '7px 12px',
+            borderRadius: 14,
+            background: isDark ? 'rgba(139,92,246,0.18)' : 'rgba(139,92,246,0.10)',
+            border: '1px solid rgba(139,92,246,0.30)',
+          }}>
+            <div style={{
+              width: 24, height: 24, borderRadius: 8,
+              background: isDark ? 'rgba(139,92,246,0.25)' : 'rgba(139,92,246,0.15)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+            }}>
+              <ArrowUpDown size={13} color="#8b5cf6" />
+            </div>
+            <span style={{ fontSize: 12, fontWeight: 600, color: '#8b5cf6', lineHeight: 1.3 }}>
+              Take lift/stairs to{' '}
+              {routeStats.transitions.map((t, i) => (
+                <span key={i}>{i > 0 ? ', then ' : ''}Level {t.to}</span>
+              ))}
+            </span>
+          </div>
+        )}
 
         {/* Combined Control Panel (theme + levels) */}
         <div style={glassStyle(isDark, {
@@ -1174,7 +1200,11 @@ export default function App() {
             paddingTop: isMobile ? 4 : 8,
             paddingBottom: isMobile ? 4 : 8,
           }}>
-             {(isMobile ? [...ALL_LEVELS].reverse() : ALL_LEVELS).map(lvl => (
+             {(isMobile ? [...ALL_LEVELS].reverse() : ALL_LEVELS).map(lvl => {
+              const isActive = activeLevel === lvl.value
+              const isDestLevel = hasRoute && routeStats && routeStats.transitions.length > 0 &&
+                routeStats.transitions[routeStats.transitions.length - 1].to === lvl.value
+              return (
               <button
                 key={lvl.value}
                 ref={el => { levelRefs.current[lvl.value] = el }}
@@ -1182,15 +1212,17 @@ export default function App() {
                 style={{
                   width: isMobile ? 44 : 46, height: isMobile ? 40 : 40, borderRadius: 12,
                   display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
-                  gap: 2, cursor: 'pointer', border: 'none',
+                  gap: 2, cursor: 'pointer',
                   flexShrink: 0,
-                  background: activeLevel === lvl.value ? '#2563eb' : 'transparent',
-                  color: activeLevel === lvl.value ? '#ffffff' : sub,
-                  boxShadow: activeLevel === lvl.value ? '0 3px 14px rgba(37,99,235,0.45)' : 'none',
-                  transform: activeLevel === lvl.value ? 'scale(1.06)' : 'scale(1)',
+                  background: isActive ? '#2563eb' : 'transparent',
+                  color: isActive ? '#ffffff' : isDestLevel ? '#8b5cf6' : sub,
+                  boxShadow: isActive ? '0 3px 14px rgba(37,99,235,0.45)' : 'none',
+                  transform: isActive ? 'scale(1.06)' : 'scale(1)',
                   transition: 'all 0.22s cubic-bezier(0.34,1.26,0.64,1)',
                   fontFamily: 'inherit',
-                }}>
+                  border: isDestLevel && !isActive ? '2px solid rgba(139,92,246,0.55)' : '2px solid transparent',
+                }}
+              >
                 <span style={{ fontSize: isMobile ? 14 : 15, fontWeight: 800, lineHeight: 1 }}>
                   {isMobile ? getMobileLabel(lvl.value) : lvl.label}
                 </span>
@@ -1198,7 +1230,8 @@ export default function App() {
                   <span style={{ fontSize: 8, fontWeight: 600, opacity: 0.75, lineHeight: 1 }}>LEVEL</span>
                 )}
               </button>
-            ))}
+              )
+            })}
           </div>
         </div>
       </div>
