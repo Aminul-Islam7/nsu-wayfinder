@@ -118,7 +118,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
 		const totalSeconds = Math.round(distM / 1.2);
 		const mins = Math.floor(totalSeconds / 60);
 		const secs = totalSeconds % 60;
-		const timeStr = mins > 0 ? `${mins} min${mins > 1 ? 's' : ''}` : `${secs} sec${secs > 1 ? 's' : ''}`;
+		const timeStr = mins > 0 ? (secs >= 30 ? `>${mins} min` : `${mins} min`) : `${secs} sec`;
 		const distStr = distM < 1000 ? `${Math.round(distM)} m` : `${(distM / 1000).toFixed(1)} km`;
 		return { timeStr, distStr };
 	}, [route.routeCoordinates]);
