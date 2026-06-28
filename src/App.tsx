@@ -1139,12 +1139,12 @@ export default function App() {
               background: isDark ? 'rgba(139,92,246,0.25)' : 'rgba(139,92,246,0.15)',
               display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
             }}>
-              <ArrowUpDown size={13} color="#8b5cf6" />
+              <ArrowUpDown size={13} color={isDark ? '#fff' : '#8b5cf6'} />
             </div>
             <span style={{ fontSize: 12, fontWeight: 600, color: isDark ? '#e5d4ff' : '#7c3aed', lineHeight: 1.3 }}>
               Take lift/stairs to{' '}
               {routeStats.transitions.map((t, i) => (
-                <span key={i} style={{ color: '#a78bfa', fontWeight: 700 }}>{i > 0 ? ', then ' : ''}Level {t.to}</span>
+                <span key={i} style={{ color: isDark ? '#fff' : '#7c3aed', fontWeight: 700 }}>{i > 0 ? ', then ' : ''}Level {t.to}</span>
               ))}
             </span>
           </div>
